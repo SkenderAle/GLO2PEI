@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PEI Planner – Profilo ADA / L.104 (offline)</title>
+  <link rel="stylesheet" href="assets/css/styles.css?v=2026-01-05">
+
+</head>
+<body>
+  <header>
+    <h1>🧩 PEI Planner (ADA / L.104) – selezione tabella + ICF + Sez.5 SMART – v4.1 (2026-01-02)</h1>
+    <p class="sub">
+      Offline, senza invio dati. Evita dati identificativi (nome, diagnosi completa): lavora su profilo funzionale e bisogni.
+      L’output è una <em>bozza</em> da adattare nel PEI/ICF e condividere nel GLO.
+    </p>
+  </header>
+
+  <div class="wrap">
+    <div class="grid">
+
+      <!-- 1) TABella -->
+      <section class="card wide">
+        <h2>
+          <span>1) Seleziona profilo dalla tabella</span>
+          <small>gravità (mutua) + compromissioni (toggle)</small>
+        </h2>
+        <div class="body">
+          <div class="tableWrap" id="tableMount"></div>
+
+          <div class="hr"></div>
+          <div class="note">
+            Seleziona <b>una</b> gravità per riga (Lieve/Media/Grave) solo per le aree pertinenti.
+            Le compromissioni (comunicativa/motoria/cognitiva/pluri) puoi attivarle/disattivarle liberamente.
+
+          <div class="hr"></div>
+
+          <div class="icdCard" id="icdCard">
+  <div class="icdHead">
+    <div>
+      <div class="icdTitle">ICD-10 (diagnosi) – codici dalla documentazione</div>
+      <div class="icdSub">Aggiungi uno o più codici ICD-10 (aree F, G, H) presenti nella documentazione clinica. Entrano nel Quadro iniziale (Sez.1) come riferimento diagnostico.</div>
+    </div>
+    <div class="icdTools">
+      <select id="icdSelect" class="input" title="Seleziona un codice ICD-10">
+        <option value="">— Seleziona codice —</option>
+<option value="F70">F70 — Ritardo mentale lieve</option>
+<option value="F71">F71 — Ritardo mentale di media gravità</option>
+<option value="F72">F72 — Ritardo mentale grave</option>
+<option value="F73">F73 — Ritardo mentale profondo</option>
+<option value="F80">F80 — Disturbo evolutivo specifico dell'eloquio e del linguaggio</option>
+<option value="F81">F81 — Disturbo evolutivo specifico delle abilità scolastiche (comprende Dislessia/DSA)</option>
+<option value="F81.1">F81.1 — Disturbo specifico della scrittura</option>
+<option value="F81.2">F81.2 — Disturbo specifico delle abilità aritmetiche</option>
+<option value="F81.3">F81.3 — Disturbi misti delle abilità scolastiche</option>
+<option value="F81.8">F81.8 — Altri disturbi delle abilità scolastiche</option>
+<option value="F81.9">F81.9 — Disordine evolutivo delle abilità scolastiche non meglio specificato</option>
+<option value="F82">F82 — Disturbo evolutivo specifico delle abilità motorie</option>
+<option value="F83">F83 — Disturbi evolutivi specifici misti</option>
+<option value="F84.0">F84.0 — Autismo infantile</option>
+<option value="F84.1">F84.1 — Autismo atipico</option>
+<option value="F84.2">F84.2 — Sindrome di Rett</option>
+<option value="F84.3">F84.3 — Sindrome disintegrativa dell'infanzia di altro tipo</option>
+<option value="F84.4">F84.4 — Sindrome iperattiva associata a ritardo mentale e movimenti stereotipati</option>
+<option value="F84.5">F84.5 — Sindrome di Asperger</option>
+<option value="F90.0">F90.0 — Disturbo dell'attività e dell'attenzione</option>
+<option value="F90.1">F90.1 — Disturbo ipercinetico della condotta</option>
+<option value="F90.8">F90.8 — Sindrome ipercinetiche di altro tipo</option>
+<option value="F93">F93 — Disturbi della sfera emozionale con esordio caratteristico dell’infanzia</option>
+<option value="F94">F94 — Disturbo del funzionamento sociale con esordio specifico nell’infanzia e nell’adolescenza</option>
+<option value="F95">F95 — Disturbi a tipo tic</option>
+<option value="F98">F98 — Altri disturbi comportamentali e della sfera emozionale con esordio abituale nell'infanzia e nell'adolescenza</option>
+<option value="G80">G80 — Paralisi cerebrale infantile</option>
+<option value="G81">G81 — Emiplegia</option>
+<option value="G82">G82 — Paraplegia e tetraplegia (paraparesi e tetraparesi)</option>
+<option value="G83">G83 — Altre sindromi paralitiche</option>
+<option value="H54">H54 — Compromissione visiva, compresa cecità e ipovisione</option>
+<option value="H90">H90 — Ipoacusia trasmissiva e neurosensoriale</option>
+<option value="H91">H91 — Altre perdite uditive e perdite uditive non specificate</option>
+      </select>
+      <button class="btn" id="btnIcdAdd" type="button">Aggiungi</button>
+      <button class="btn danger" id="btnIcdReset" type="button">Azzera ICD</button>
+    </div>
+  </div>
+  <div class="icdList" id="icdList"></div>
+</div>
+
+          </div>
+
+          <div class="actions">
+            <button class="btn primary" id="btnGenerate" type="button">⚙️ Aggiorna PEI (bozza)</button>
+            <button class="btn" id="btnHelpMode" type="button" aria-pressed="false">❓ Modalità spiegazioni</button>
+            <button class="btn" id="btnSave" type="button">💾 Salva (local)</button>
+            <button class="btn" id="btnLoad" type="button">📥 Carica (local)</button>
+            <button class="btn danger" id="btnReset" type="button">🧹 Azzera selezioni</button>
+          </div>
+          <div id="saveStatus" class="note" style="margin-top:6px"></div>
+
+          <div class="warnbox">
+            <b>Nota etica/legale:</b> questo strumento non sostituisce documentazione clinica, PEI, GLO, né indicazioni specialistiche.
+            Serve a costruire una <b>bozza didattico-operativa</b> coerente con un profilo funzionale.
+          </div>
+        </div>
+      </section>
+
+      <!-- 2) Contesto + ICF + Output -->
+      <section class="card">
+        <h2>
+          <span>2) Contesto, ICF e Output PEI</span>
+          <small>età, contesto, obiettivi e proposta</small>
+        </h2>
+        <div class="body">
+
+          <div class="form">
+            <div class="row">
+              <label for="profileName">Nome profilo (per riconoscerlo nei file) – evita dati identificativi</label>
+              <input id="profileName" type="text" placeholder="es. Alunno A (2B) / ID-2026-01" />
+            </div>
+            <div class="row">
+              <label for="eta">Età (anni)</label>
+              <input id="eta" type="number" min="3" max="22" placeholder="es. 12" />
+            </div>
+            <div class="row">
+              <label for="ordine">Ordine/grado scolastico</label>
+              <select id="ordine">
+                <option value="">—</option>
+                <option>Infanzia</option>
+                <option>Primaria</option>
+                <option>Secondaria I grado</option>
+                <option>Secondaria II grado</option>
+                <option>Altro</option>
+              </select>
+            </div>
+
+            <div class="row">
+              <label for="famiglia">Situazione famigliare (sintetica)</label>
+              <select id="famiglia">
+                <option value="">—</option>
+                <option value="stabile">Stabile e collaborativa</option>
+                <option value="fragile">Fragilità socio-economiche / stress</option>
+                <option value="conflittuale">Conflittuale / comunicazione difficile</option>
+                <option value="assente">Poco presente / difficoltà di contatto</option>
+                <option value="tutela">Servizi / tutela / affidamento</option>
+              </select>
+            </div>
+
+            
+            <div class="row">
+              <label>Contesto famigliare – checklist rapida</label>
+              <div class="twoColForm">
+                <div>
+                  <div class="note" style="margin-bottom:8px"><b>Fattori critici/di rischio</b></div>
+                  <div id="famCritMount" class="smallRow"></div>
+
+                  <div class="note" style="margin:10px 0 8px"><b>Fattori protettivi/positivi</b></div>
+                  <div id="famPosMount" class="smallRow"></div>
+                </div>
+
+                <div>
+                  <div class="row">
+                    <label for="famSiblings">Numero di fratelli/sorelle</label>
+                    <input id="famSiblings" type="number" min="0" max="15" placeholder="es. 1" />
+                  </div>
+                  <div class="row">
+                    <label for="famNote">Note operative (famiglia) – una riga per punto</label>
+                    <textarea id="famNote" placeholder="es. routine stabili; difficoltà nel seguire i compiti; supporto dei nonni..."></textarea>
+                  </div>
+                </div>
+              </div>
+            </div>
+<div class="row">
+              <label for="classe">Contesto classe</label>
+              <select id="classe">
+                <option value="">—</option>
+                <option value="favorevole">Clima favorevole / compagni supportivi</option>
+                <option value="neutro">Neutro / ordinario</option>
+                <option value="critico">Criticità relazionali / rumore / conflitti</option>
+                <option value="complesso">Classe complessa (molti bisogni)</option>
+              </select>
+            </div>
+          </div>
+
+          
+            <div class="row">
+              <label>Contesto scolastico – dati di classe e checklist rapida</label>
+              <div class="twoColForm">
+                <div>
+                  <div class="statsGrid">
+                    <div class="row">
+                      <label for="schClass">Classe/sezione</label>
+                      <input id="schClass" type="text" placeholder="es. 2B" />
+                    </div>
+                    <div class="row">
+                      <label for="schTotal">N° alunni totali</label>
+                      <input id="schTotal" type="number" min="1" max="40" placeholder="es. 24" />
+                    </div>
+                    <div class="row">
+                      <label for="schMale">N° maschi</label>
+                      <input id="schMale" type="number" min="0" max="40" placeholder="es. 13" />
+                    </div>
+                    <div class="row">
+                      <label for="schFemale">N° femmine</label>
+                      <input id="schFemale" type="number" min="0" max="40" placeholder="es. 11" />
+                    </div>
+                    <div class="row">
+                      <label for="schADA">Altri ADA/104 in classe</label>
+                      <input id="schADA" type="number" min="0" max="20" placeholder="es. 1" />
+                    </div>
+                    <div class="row">
+                      <label for="schDSA">Casi DSA (PDP)</label>
+                      <input id="schDSA" type="number" min="0" max="40" placeholder="es. 3" />
+                    </div>
+                    <div class="row">
+                      <label for="schBES">Altri BES (non DSA)</label>
+                      <input id="schBES" type="number" min="0" max="40" placeholder="es. 2" />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <div class="note" style="margin-bottom:8px"><b>Fattori di contesto scolastico</b></div>
+                  <div id="schCtxMount" class="smallRow"></div>
+
+                  <div class="row" style="margin-top:10px">
+                    <label for="schNote">Note operative (scuola) – una riga per punto</label>
+                    <textarea id="schNote" placeholder="es. rumore alto; utile angolo quiete; routine di avvio..."></textarea>
+                  </div>
+                </div>
+              </div>
+            </div>
+<div class="row">
+            <label for="storico">Storico essenziale (osservazioni, interventi già fatti, cosa ha funzionato/non ha funzionato)</label>
+            <textarea id="storico" placeholder="es. già usate mappe visive; buona risposta a routine; difficoltà in verifiche scritte..."></textarea>
+          </div>
+
+          <div class="row">
+            <label for="puntiForza">Punti di forza / interessi / motivatori</label>
+            <textarea id="puntiForza" placeholder="es. motivazione per musica, tecnologia, attività pratiche; buona memoria visiva..."></textarea>
+          </div>
+
+          <div class="row">
+            <label>Bisogni “tipo DSA/ADHD” (per attivare compensativi/dispensativi dove sensato)</label>
+            <div class="smallRow" id="needsMount"></div>
+          </div>
+
+          <div class="hr"></div>
+
+
+          
+
+          <div class="dfpfCard" id="dfpfCard">
+            <div class="dfpfHead">
+              <div>
+                <div class="dfpfTitle">ICF da documentazione + eventuale funzionamento osservato (clinico + educativo + sociale)</div>
+                <div class="dfpfSub">Seleziona i codici ICF rilevanti (da DF/Profilo di Funzionamento e/o osservazione) e assegna il qualificatore 0–4 (0 nessun problema, 4 problema completo). Questi dati entrano nel Quadro iniziale (Sez.1) e aiutano i preset degli obiettivi.</div>
+              </div>
+              <div class="dfpfTools">
+                <input id="diagIcfSearch" class="input" type="search" placeholder="Cerca codice o descrizione (es. b140, attenzione, d160…)" />
+<div class="icf-chips-wrap">
+  <div class="icf-chips-title">Suggerimenti rapidi:</div>
+  <div id="icfSemanticChips" class="icf-chips" aria-label="Suggerimenti semantici ICF">
+    <button type="button" class="chip" data-q="vista">Vista</button>
+    <button type="button" class="chip" data-q="udito">Udito</button>
+    <button type="button" class="chip" data-q="attenzione">Attenzione</button>
+    <button type="button" class="chip" data-q="memoria">Memoria</button>
+    <button type="button" class="chip" data-q="funzioni esecutive">Funzioni esecutive</button>
+    <button type="button" class="chip" data-q="linguaggio">Linguaggio</button>
+    <button type="button" class="chip" data-q="comunicazione">Comunicazione</button>
+    <button type="button" class="chip" data-q="lettura">Lettura</button>
+    <button type="button" class="chip" data-q="scrittura">Scrittura</button>
+    <button type="button" class="chip" data-q="calcolo">Calcolo</button>
+    <button type="button" class="chip" data-q="autonomia">Autonomia</button>
+    <button type="button" class="chip" data-q="routine">Routine</button>
+    <button type="button" class="chip" data-q="ansia">Ansia</button>
+    <button type="button" class="chip" data-q="regolazione emotiva">Regolazione emotiva</button>
+    <button type="button" class="chip" data-q="comportamento">Comportamento</button>
+    <button type="button" class="chip" data-q="relazione">Relazione</button>
+    <button type="button" class="chip" data-q="socialità">Socialità</button>
+    <button type="button" class="chip" data-q="rumore">Rumore</button>
+    <button type="button" class="chip" data-q="tecnologie">Tecnologie</button>
+    <button type="button" class="chip" data-q="ambiente">Ambiente</button>
+    <button type="button" class="chip" data-q="caa">CAA</button>
+  </div>
+</div>
+                <select id="diagIcfCat" class="input">
+                  <option value="all">Tutti (b, s, d, e)</option>
+                  <option value="b">b – Funzioni</option>
+                  <option value="s">s – Strutture</option>
+                  <option value="d">d – Attività e partecipazione</option>
+                  <option value="e">e – Fattori ambientali</option>
+                </select>
+                <label class="dfpfOnlySel">
+                  <input id="diagIcfOnlySel" type="checkbox" />
+                  <span>Solo selezionati</span>
+                </label>
+                <button class="btn" id="btnDiagIcfClear" type="button">Pulisci</button>
+                <button class="btn danger" id="btnDiagIcfReset" type="button">Azzera ICF</button>
+              </div>
+            </div>
+
+            <div class="dfpfStats">
+              <span id="diagIcfCount" class="muted">—</span>
+              <span class="muted">•</span>
+              <span class="muted">Suggerimento: per evitare liste lunghissime, usa ricerca e filtro.</span>
+            </div>
+
+            <div class="dfpfList" id="diagIcfList"></div>
+            <div class="dfpfFoot muted">Mostrati massimo 200 risultati per volta. Usa la ricerca per trovare rapidamente qualsiasi codice.</div>
+          </div>
+
+          <div class="sectionTitle">
+            <h3>Obiettivi ICF e fattori contestuali</h3>
+            <span class="note">selezione rapida + campo libero</span>
+          </div>
+
+          <div class="icfGrid">
+            <div class="panel">
+              <p class="pt"><b>Obiettivi ICF</b> (funzioni/attività e partecipazione)</p>
+              <div class="search">
+                <input id="icfSearch" type="text" placeholder="Cerca (es. attenzione, comunicazione, autonomia...)" />
+                <button class="btn" type="button" id="btnIcfClear">Pulisci</button>
+              </div>
+              <div id="icfObjectivesMount"></div>
+              <div class="row" style="margin-top:10px">
+                <label for="icfCustom">Obiettivi personalizzati (uno per riga)</label>
+                <textarea id="icfCustom" placeholder="es. aumentare autonomia nel gestire materiale; usare richiesta di pausa in modo funzionale..."></textarea>
+              </div>
+            </div>
+
+            <div class="panel">
+              <p class="pt"><b>Fattori ambientali</b> (barriere/facilitatori) + risorse</p>
+              <div class="twoCols">
+                <div>
+                  <p class="pt">Facilitatori (e)</p>
+                  <div id="icfFacMount"></div>
+                </div>
+                <div>
+                  <p class="pt">Barriere (e)</p>
+                  <div id="icfBarMount"></div>
+                </div>
+              </div>
+              <div class="hr"></div>
+              <p class="pt">Risorse coinvolte</p>
+              <div id="resourcesMount" class="smallRow"></div>
+            </div>
+          </div>
+
+          <div class="hr"></div>
+
+          
+          <div class="hr"></div>
+
+          
+
+          <div class="icdCard" id="methodsCard">
+            <div class="icdHead">
+              <div>
+                <div class="icdTitle">Metodologie didattiche – proposte & selezione</div>
+                <div class="icdSub">Suggerimenti automatici in base a profilo/ICF, ma sempre modificabili.</div>
+              </div>
+              <div class="dfpfTools" style="flex-wrap:wrap;gap:8px">
+                <input id="methodsSearch" class="input" type="search" placeholder="Cerca metodologia..." style="min-width:220px"/>
+                <select id="methodsAddSelect" class="input" style="min-width:260px"></select>
+                <button class="btn" id="btnMethodAdd" type="button">Aggiungi</button>
+                <button class="btn" id="btnMethodsAuto" type="button" title="Ripristina suggerimenti automatici (rimuove gli override)">Auto</button>
+                <button class="btn danger" id="btnMethodsClear" type="button" title="Azzera la selezione (imposta override per evitare ri-attivazioni automatiche)">Azzera</button>
+              </div>
+            </div>
+            <div class="dfpfStats">
+              <span id="methodsCount" class="muted">—</span>
+              <span class="muted">•</span>
+              <span class="muted">Le metodologie selezionate confluiscono nella sezione 5.2 dell'output.</span>
+            </div>
+            <div class="dfpfList" id="methodsList"></div>
+            <div class="row" style="margin-top:10px">
+              <label for="methodsCustom">Metodologie aggiuntive (una per riga)</label>
+              <textarea id="methodsCustom" placeholder="Scrivi qui eventuali metodologie non presenti (una per riga)..."></textarea>
+            </div>
+          </div>
+
+<div class="sectionTitle">
+            <h3>Sezione 5 (Modello nazionale) – Obiettivi SMART, interventi e monitoraggio</h3>
+            <span class="note">template guidato (verbi operativi, criteri, tempi, verifica)</span>
+          </div>
+
+          <div class="panel">
+            <p class="pt"><b>Obiettivi SMART</b> – per ciascun obiettivo, definisci azione osservabile, condizioni, criterio e tempo. Poi collega una modalità di verifica.</p>
+
+            <div class="actions">
+              <button class="btn" id="btnSmartSync" type="button">🔄 Crea/Aggiorna da obiettivi ICF</button>
+              <button class="btn" id="btnSmartAddFree" type="button">➕ Aggiungi obiettivo SMART libero</button>
+            </div>
+
+            <div class="note" style="margin-top:8px">
+              Suggerimento: parti da 3–5 obiettivi SMART “forti” per 8–12 settimane, misurabili e sostenibili.
+            </div>
+
+            <div id="smartMount" class="smartList"></div>
+
+            <div class="hr"></div>
+
+            <p class="pt"><b>Monitoraggio e revisione</b> – come e quando verifichi i progressi (GLO/team).</p>
+
+            <div class="form">
+              <div class="row">
+                <label for="monFreq">Frequenza rilevazione (raccolta dati)</label>
+                <select id="monFreq">
+                  <option value="settimanale">Settimanale</option>
+                  <option value="quindicinale">Quindicinale</option>
+                  <option value="mensile">Mensile</option>
+                </select>
+              </div>
+              <div class="row">
+                <label for="monReview">Cadenza revisione strategie (team/GLO)</label>
+                <select id="monReview">
+                  <option value="4 settimane">Ogni 4 settimane</option>
+                  <option value="6-8 settimane" selected>Ogni 6–8 settimane</option>
+                  <option value="trimestrale">Trimestrale</option>
+                  <option value="quadrimestrale">Quadrimestrale</option>
+                </select>
+              </div>
+              <div class="row">
+                <label for="monMidDate">Data revisione intermedia (facoltativa)</label>
+                <input id="monMidDate" type="date" />
+              </div>
+              <div class="row">
+                <label for="monAnnualDate">Data revisione annuale (facoltativa)</label>
+                <input id="monAnnualDate" type="date" />
+              </div>
+            </div>
+
+            <div class="row" style="margin-top:10px">
+              <label>Strumenti di verifica (selezione multipla)</label>
+              <div class="smallRow" id="monToolsMount"></div>
+            </div>
+          </div>
+
+          <div class="kpis" id="kpis"></div>
+
+          <div class="row" style="margin-top:12px">
+            <label>Selezioni attive</label>
+            <div class="chips" id="chips"></div>
+          </div>
+
+          <div class="row">
+            <label>Output – bozza PEI (copia/incolla)</label>
+            <div class="richOutput" id="output" aria-live="polite"></div>
+            <div class="testbox" id="testbox"></div>
+          </div>
+
+          <div class="actions">
+            <button class="btn" id="btnCopy" type="button">📋 Copia (formattato)</button>
+            <button class="btn" id="btnDocx" type="button">🟦 Esporta DOCX</button>
+            <button class="btn" id="btnExport" type="button">⬇️ Esporta JSON</button>
+            <button class="btn" id="btnExportPEI" type="button">⬇️ Esporta PEI (JSON ponte)</button>
+            <button class="btn" id="btnImport" type="button">⬆️ Importa JSON</button>
+            <input id="fileImport" type="file" accept="application/json" style="display:none" />
+          </div>
+
+          <p class="note" style="margin-top:10px">
+            L’export DOCX usa una libreria JS: se vuoi usarlo <b>offline</b>, scarica il file <i>html-docx.js</i> e linkalo localmente.
+          </p>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <!-- Libreria per export DOCX (via CDN). Per uso offline: scarica e sostituisci con un percorso locale. -->
+  <script src="https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.js"></script>
+
+<script src="assets/js/app.js?v=2026-01-05" defer></script>
+
+</body>
+</html>
