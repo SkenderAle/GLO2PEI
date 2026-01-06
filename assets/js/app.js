@@ -279,7 +279,7 @@ const SCHOOL_CTX = [
 ];
 
 /** =========================
- *  Sez. 5 (modello nazionale) – Obiettivi SMART + monitoraggio
+ *  Obiettivi operativi verificabili (SMART) + monitoraggio
  *  ========================= */
 const SMART_VERBS = [
   "indicare", "riconoscere", "descrivere", "spiegare", "riassumere",
@@ -524,6 +524,28 @@ const ICF_OBJECTIVES = allIcfObjectives();
 const ICF_FACILITATORS = allIcfFacilitators();
 const ICF_BARRIERS = allIcfBarriers();
 
+// Mappa rapida: key obiettivo ICF -> area/sezione ICF (S1..S4) e ordine di priorità
+const ICF_OBJECTIVE_AREA_MAP = (() => {
+  const m = Object.create(null);
+  for(const sec of ICF_SECTIONS){
+    for(const it of (sec.objectives || [])){
+      m[it.key] = sec.id;
+    }
+  }
+  return m;
+})();
+
+const ICF_OBJECTIVE_ORDER_MAP = (() => {
+  const m = Object.create(null);
+  let i = 0;
+  for(const sec of ICF_SECTIONS){
+    for(const it of (sec.objectives || [])){
+      m[it.key] = i++;
+    }
+  }
+  return m;
+})();
+
 const RESOURCES = [
   { key:"curricolari", label:"Docenti curricolari" },
   { key:"sostegno", label:"Docente di sostegno" },
@@ -602,6 +624,19 @@ function renderICD() {
   }
 }
 
+
+function renderDocs(){
+  const g = (id) => document.getElementById(id);
+  const d = state.docs || {};
+  const setVal = (el, v) => { if(el) el.value = v || ""; };
+
+  setVal(g("accertamentoDate"), d.accertamentoDate);
+  setVal(g("scadenzaDate"), d.scadenzaDate);
+  setVal(g("pfRedattoDate"), d.pfRedattoDate);
+  setVal(g("dfDate"), d.dfDate);
+  setVal(g("pdfDate"), d.pdfDate);
+  setVal(g("progettoIndDate"), d.progettoIndDate);
+}
 function bindICD() {
   const selEl = document.getElementById("icdSelect");
   const btnAdd = document.getElementById("btnIcdAdd");
@@ -783,6 +818,14 @@ function createDefaultState(){
     ),
     needs: Object.fromEntries(NEEDS.map(n => [n.key, false])),
     icd: { codes: [] },
+    docs: {
+      accertamentoDate: "",
+      scadenzaDate: "",
+      pfRedattoDate: "",
+      dfDate: "",
+      pdfDate: "",
+      progettoIndDate: ""
+    },
     icf: {
       objectives: Object.fromEntries(ICF_OBJECTIVES.map(it => [it.key, false])),
       customObjectives: "",
@@ -1622,6 +1665,17 @@ function textEscape(s){
   return (s || "").replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));
 }
 
+
+function fmtDate(iso){
+  if(!iso) return "";
+  // Expect YYYY-MM-DD
+  const m = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/.exec(String(iso).trim());
+  if(!m) return String(iso);
+  const y=m[1], mo=m[2], d=m[3];
+  return `${d}/${mo}/${y}`;
+}
+
+
 function kLabel(k){
   return ({comm:"compromissione comunicativa", mot:"compromissione motoria", cog:"compromissione cognitiva", pluri:"pluridisabilità"})[k] || k;
 }
@@ -1922,14 +1976,16 @@ function renderICF(){
 
 
 /** =========================
- *  SMART (Sez. 5) – gestione UI e sincronizzazione
+ *  SMART – gestione UI e sincronizzazione
  *  ========================= */
 function getSmartSources(){
   const sources = [];
-  // ICF selezionati
-  for(const it of ICF_OBJECTIVES){
-    if(state.icf.objectives[it.key]){
-      sources.push({ sourceType:"icf", sourceKey: it.key, code: it.code, label: it.label });
+  // ICF selezionati (limitati: max 1 obiettivo SMART generato automaticamente per ciascuna area di funzionamento)
+  // Se l'utente desidera più SMART nella stessa area, può aggiungerli manualmente ("Aggiungi").
+  for(const sec of ICF_SECTIONS){
+    const firstSelected = (sec.objectives || []).find(it => state.icf.objectives[it.key]);
+    if(firstSelected){
+      sources.push({ sourceType:"icf", sourceKey: firstSelected.key, code: firstSelected.code, label: firstSelected.label, icfArea: sec.id });
     }
   }
   // Obiettivi custom (campo libero): una riga = un obiettivo
@@ -2006,7 +2062,14 @@ function addFreeSmartGoal(){
 function isGoalActive(g){
   if(!g) return false;
   if(g.sourceType === "free") return true;
-  if(g.sourceType === "icf") return !!state.icf.objectives[g.sourceKey];
+  if(g.sourceType === "icf"){
+    if(!state.icf.objectives[g.sourceKey]) return false;
+    // Attivo solo se è il "primario" della sua area ICF (max 1 per area)
+    const secId = ICF_OBJECTIVE_AREA_MAP[g.sourceKey] || "";
+    if(!secId) return true; // fallback: se non sappiamo l'area, non penalizziamo
+    const primary = (ICF_SECTIONS.find(s => s.id === secId)?.objectives || []).find(it => state.icf.objectives[it.key]);
+    return primary ? (primary.key === g.sourceKey) : true;
+  }
   if(g.sourceType === "custom"){
     const custom = getCustomObjectivesList();
     return custom.includes(g.label);
@@ -2193,7 +2256,35 @@ function renderSmart(){
 }
 
 function getActiveSmartGoals(){
-  return (state.icf.smartGoals || []).filter(g => isGoalActive(g));
+  const active = (state.icf.smartGoals || []).filter(g => isGoalActive(g));
+
+  // Limite: massimo 1 SMART automatico per area di funzionamento (solo per sourceType === "icf").
+  // L'utente può comunque aggiungere ulteriori SMART manualmente (sourceType "free") o personalizzati.
+  const icf = active.filter(g => g && g.sourceType === "icf");
+  const other = active.filter(g => !g || g.sourceType !== "icf");
+
+  // Ordina gli ICF secondo l'ordine degli obiettivi (così la scelta è stabile e prevedibile)
+  icf.sort((a,b) => {
+    const oa = (ICF_OBJECTIVE_ORDER_MAP[a.sourceKey] ?? 999999);
+    const ob = (ICF_OBJECTIVE_ORDER_MAP[b.sourceKey] ?? 999999);
+    return oa - ob;
+  });
+
+  const picked = [];
+  const seenAreas = new Set();
+  for(const g of icf){
+    const area = ICF_OBJECTIVE_AREA_MAP[g.sourceKey] || "";
+    // Se non riusciamo a determinare l'area, non applichiamo il limite (meglio includere che perdere).
+    if(!area){
+      picked.push(g);
+      continue;
+    }
+    if(seenAreas.has(area)) continue;
+    seenAreas.add(area);
+    picked.push(g);
+  }
+
+  return [...other, ...picked];
 }
 
 function getSelectedICFObjectives(){
@@ -2531,59 +2622,52 @@ collaboration.push("Patto educativo condiviso e coerenza tra adulti; rinforzi ch
   }
 
   const html = [];
-  html.push(`<h1>Bozza PEI – Piano Educativo Individualizzato (profilo funzionale)</h1>`);
-  html.push(`<p class="muted"><i>Documento di lavoro – da adattare e validare in sede di GLO</i></p>`);
+  html.push(`<h1>Scheda di sintesi per la redazione del PEI</h1>`);
+  html.push(`<p class="muted">Documento di progettazione educativa a supporto della redazione del PEI. Non costituisce PEI formale.</p>`);
 
-  if(meta.profileName && meta.profileName.trim()){
+  // Documentazione e atti (sintesi)
+  const docs = state.docs || {};
+  const docLines = [];
+  if(docs.accertamentoDate) docLines.push(`Accertamento (rilasciato): ${fmtDate(docs.accertamentoDate)}`);
+  if(docs.scadenzaDate) docLines.push(`Scadenza/Rivedibilità: ${fmtDate(docs.scadenzaDate)}`);
+  if(docs.pfRedattoDate) docLines.push(`Profilo di Funzionamento (redatto): ${fmtDate(docs.pfRedattoDate)}`);
+  if(docs.dfDate) docLines.push(`Diagnosi Funzionale (redatta): ${fmtDate(docs.dfDate)}`);
+  if(docs.pdfDate) docLines.push(`Profilo Dinamico Funzionale (approvato): ${fmtDate(docs.pdfDate)}`);
+  if(docs.progettoIndDate) docLines.push(`Progetto Individuale (redatto): ${fmtDate(docs.progettoIndDate)}`);
+
+  if(docLines.length){
+    html.push(`<div class="box"><h2>Documentazione e atti</h2>${listHtml(docLines)}</div>`);
+  }
+
+if(meta.profileName && meta.profileName.trim()){
     html.push(`<p><b>Profilo:</b> ${textEscape(meta.profileName.trim())}</p>`);
   }
   html.push(`<p><b>Età/Ordine:</b> ${eta ? textEscape(String(eta)) + " anni" : "—"} / ${ordine ? textEscape(ordine) : "—"}</p>`);
-    const famCrit = FAMILY_CRIT.filter(it => state.familyCtx.crit[it.key]).map(it => it.label);
-  const famPos = FAMILY_POS.filter(it => state.familyCtx.pos[it.key]).map(it => it.label);
-  const schCtx = SCHOOL_CTX.filter(it => state.schoolCtx.ctx[it.key]).map(it => it.label);
+
+  const famCrit = FAMILY_CRIT.filter(it => state.familyCtx.crit[it.key]).map(it => it.label);
+  const famPos  = FAMILY_POS.filter(it => state.familyCtx.pos[it.key]).map(it => it.label);
+  const schCtx  = SCHOOL_CTX.filter(it => state.schoolCtx.ctx[it.key]).map(it => it.label);
 
   const famNoteBul = splitToBullets(state.familyCtx.note || "");
   const schNoteBul = splitToBullets(state.schoolCtx.note || "");
 
-  html.push(`<h3>Contesto famigliare</h3>`);
-  html.push(`<p><b>Quadro sintetico:</b> ${textEscape(famigliaLabel(famiglia))}</p>`);
-  if(famCrit.length) html.push(`<p><b>Fattori critici:</b></p>${listHtml(famCrit)}`);
-  if(famPos.length) html.push(`<p><b>Fattori positivi:</b></p>${listHtml(famPos)}`);
-  if((state.familyCtx.siblings || "") !== "") html.push(`<p><b>Fratelli/sorelle:</b> ${textEscape(state.familyCtx.siblings)}</p>`);
-  if(famNoteBul.length) html.push(`<p><b>Note operative:</b></p>${listHtml(famNoteBul)}`);
-
-  html.push(`<h3>Contesto scolastico</h3>`);
-  html.push(`<p><b>Clima classe:</b> ${textEscape(classeLabel(classe))}</p>`);
-  const st = state.schoolCtx;
-  const statsLine = [];
-  if((st.classLabel || "").trim()) statsLine.push(`<b>Classe:</b> ${textEscape(st.classLabel.trim())}`);
-  if(st.total !== "") statsLine.push(`<b>Tot:</b> ${textEscape(st.total)}`);
-  if(st.male !== "") statsLine.push(`<b>Maschi:</b> ${textEscape(st.male)}`);
-  if(st.female !== "") statsLine.push(`<b>Femmine:</b> ${textEscape(st.female)}`);
-  if(st.ada !== "") statsLine.push(`<b>Altri ADA/104:</b> ${textEscape(st.ada)}`);
-  if(st.dsa !== "") statsLine.push(`<b>DSA:</b> ${textEscape(st.dsa)}`);
-  if(st.bes !== "") statsLine.push(`<b>BES:</b> ${textEscape(st.bes)}`);
-  if(statsLine.length) html.push(`<p>${statsLine.join(" &nbsp;•&nbsp; ")}</p>`);
-  if(schCtx.length) html.push(`<p><b>Fattori scolastici rilevanti:</b></p>${listHtml(schCtx)}`);
-  if(schNoteBul.length) html.push(`<p><b>Note operative:</b></p>${listHtml(schNoteBul)}`);
-
-  html.push(`<p><b>Risorse coinvolte:</b> ${resourcesSel.length ? textEscape(resourcesSel.join(", ")) : "—"}</p>`);
-
-  html.push(`<h2>1. Profilo di funzionamento (sintesi da selezione)</h2>`);
+  /* =========================
+   *  PROFILO DI FUNZIONAMENTO
+   * ========================= */
+  html.push(`<h2>Profilo di funzionamento – quadro di sintesi</h2>`);
   html.push(profileLines.length ? listHtml(profileLines) : `<p class="muted">Nessuna selezione.</p>`);
 
-// ICD-10 (diagnosi)
-ensureIcdState();
-const icdCodes = (state.icd && Array.isArray(state.icd.codes)) ? state.icd.codes : [];
-if(icdCodes.length){
-  const rows = icdCodes
-    .map(c => ({ code:String(c), title: icdTitle(c) }))
-    .sort((a,b) => a.code.localeCompare(b.code, "it"))
-    .map(x => `<b>${textEscape(x.code)}</b> ${textEscape(x.title)}`);
-  html.push(`<h3>ICD-10 (codici diagnosi dalla documentazione)</h3>`);
-  html.push(listHtmlUnsafe(rows));
-}
-
+  // ICD-10 (diagnosi)
+  ensureIcdState();
+  const icdCodes = (state.icd && Array.isArray(state.icd.codes)) ? state.icd.codes : [];
+  if(icdCodes.length){
+    const rows = icdCodes
+      .map(c => ({ code:String(c), title: icdTitle(c) }))
+      .sort((a,b) => a.code.localeCompare(b.code, "it"))
+      .map(x => `<b>${textEscape(x.code)}</b> ${textEscape(x.title)}`);
+    html.push(`<h3>ICD-10 (codici diagnosi dalla documentazione)</h3>`);
+    html.push(listHtmlUnsafe(rows));
+  }
 
   // ICF da DF/PF con qualificatori (0–4)
   ensureDfpfState();
@@ -2611,8 +2695,41 @@ if(icdCodes.length){
     html.push(listHtml(splitToBullets(storico)));
   }
 
-  html.push(`<h2>2. ICF – Obiettivi e fattori contestuali</h2>`);
-  html.push(`<h3>2.1 Obiettivi ICF selezionati</h3>`);
+  /* =========================
+   *  CONTESTO E RISORSE
+   * ========================= */
+  html.push(`<h2>Contesto educativo</h2>`);
+
+  html.push(`<h3>Contesto familiare</h3>`);
+  html.push(`<p><b>Quadro sintetico:</b> ${textEscape(famigliaLabel(famiglia))}</p>`);
+  if(famCrit.length) html.push(`<p><b>Fattori critici:</b></p>${listHtml(famCrit)}`);
+  if(famPos.length)  html.push(`<p><b>Fattori positivi:</b></p>${listHtml(famPos)}`);
+  if((state.familyCtx.siblings || "") !== "") html.push(`<p><b>Fratelli/sorelle:</b> ${textEscape(state.familyCtx.siblings)}</p>`);
+  if(famNoteBul.length) html.push(`<p><b>Note operative:</b></p>${listHtml(famNoteBul)}`);
+
+  html.push(`<h3>Contesto scolastico</h3>`);
+  html.push(`<p><b>Clima classe:</b> ${textEscape(classeLabel(classe))}</p>`);
+  const st = state.schoolCtx;
+  const statsLine = [];
+  if((st.classLabel || "").trim()) statsLine.push(`<b>Classe:</b> ${textEscape(st.classLabel.trim())}`);
+  if(st.total !== "")  statsLine.push(`<b>Tot:</b> ${textEscape(st.total)}`);
+  if(st.male !== "")   statsLine.push(`<b>Maschi:</b> ${textEscape(st.male)}`);
+  if(st.female !== "") statsLine.push(`<b>Femmine:</b> ${textEscape(st.female)}`);
+  if(st.ada !== "")    statsLine.push(`<b>Altri ADA/104:</b> ${textEscape(st.ada)}`);
+  if(st.dsa !== "")    statsLine.push(`<b>DSA:</b> ${textEscape(st.dsa)}`);
+  if(st.bes !== "")    statsLine.push(`<b>BES:</b> ${textEscape(st.bes)}`);
+  if(statsLine.length) html.push(`<p>${statsLine.join(" &nbsp;•&nbsp; ")}</p>`);
+  if(schCtx.length)    html.push(`<p><b>Fattori scolastici rilevanti:</b></p>${listHtml(schCtx)}`);
+  if(schNoteBul.length) html.push(`<p><b>Note operative:</b></p>${listHtml(schNoteBul)}`);
+
+  html.push(`<h2>Risorse e figure coinvolte</h2>`);
+  html.push(`<p><b>Risorse coinvolte:</b> ${resourcesSel.length ? textEscape(resourcesSel.join(", ")) : "—"}</p>`);
+
+  /* =========================
+   *  ICF: OBIETTIVI + AMBIENTE
+   * ========================= */
+  html.push(`<h2>Funzionamento secondo il modello ICF</h2>`);
+  html.push(`<h3>Obiettivi ICF selezionati</h3>`);
 
   const hasAnyICF = selectedBySection.some(g => g.items.length) || icfCustom.length;
   if(hasAnyICF){
@@ -2629,73 +2746,93 @@ if(icdCodes.length){
     html.push(`<p class="muted">Seleziona obiettivi ICF oppure inserisci obiettivi personalizzati.</p>`);
   }
 
-  html.push(`<h3>2.2 Fattori ambientali (facilitatori e barriere)</h3>`);
+  html.push(`<h3>Fattori ambientali</h3>`);
   html.push(`<p><b>Facilitatori</b></p>`);
   html.push(facSel.length ? listHtmlUnsafe(facSel.map(it => `<b>${textEscape(it.code)}</b> ${textEscape(it.label)}`)) : `<p class="muted">—</p>`);
   html.push(`<p><b>Barriere</b></p>`);
   html.push(barSel.length ? listHtmlUnsafe(barSel.map(it => `<b>${textEscape(it.code)}</b> ${textEscape(it.label)}`)) : `<p class="muted">—</p>`);
 
-  html.push(`<h2>3. Obiettivi annuali (misurabili)</h2>`);
-  html.push(listHtml(goalsAnnual));
-
-  html.push(`<h2>4. Priorità a breve termine (8–12 settimane)</h2>`);
+  /* =========================
+   *  PRIORITÀ E OBIETTIVI
+   * ========================= */
+  html.push(`<h2>Priorità educative a breve termine</h2>`);
   html.push(listHtml(uniq(prioritiesShort).slice(0, 6)));
 
-html.push(`<h2>5. Interventi didattici (Sezione 5 – Modello nazionale)</h2>`);
-
-const smartGoals = getActiveSmartGoals();
-html.push(`<h3>5.1 Obiettivi SMART (operativi e verificabili)</h3>`);
-if(smartGoals.length){
-  const rows = [];
-  let i = 1;
-  for(const g of smartGoals){
-    const title = (g.code ? (g.code + " – ") : "") + (g.label || "Obiettivo");
-    const lines = [];
-    const action = (g.verb || "eseguire") + (g.behavior ? (" " + g.behavior) : "");
-    lines.push(`<b>Obiettivo ${i}</b>: <i>${textEscape(title)}</i>`);
-    if(action.trim()) lines.push(`<b>Azione osservabile</b>: ${textEscape(action.trim())}`);
-    if((g.conditions || "").trim()) lines.push(`<b>Condizioni</b>: ${textEscape(g.conditions.trim())}`);
-    if((g.criterion || "").trim()) lines.push(`<b>Criterio</b>: ${textEscape(g.criterion.trim())}`);
-    if((g.timeframe || "").trim()) lines.push(`<b>Tempo</b>: ${textEscape(g.timeframe.trim())}`);
-    const toolLabel = (VERIFY_TOOLS.find(t => t.key === g.verifyTool) || {}).label || "";
-    if(toolLabel) lines.push(`<b>Verifica</b>: ${textEscape(toolLabel)}`);
-    if((g.responsible || "").trim()) lines.push(`<b>Responsabile</b>: ${textEscape(g.responsible.trim())}`);
-    if((g.notes || "").trim()) lines.push(`<b>Note/strategie</b>: ${textEscape(g.notes.trim())}`);
-    rows.push(lines.join("<br>"));
-    i++;
+  // Medio periodo: tappo di coerenza tra breve e annuale (se non definito esplicitamente)
+  let goalsMedium = [];
+  if(prioritiesShort.length){
+    goalsMedium = uniq(prioritiesShort).slice(0, 4).map(x => {
+      const s = String(x).trim().replace(/\.+$/,"").replace(/\.$/,"");
+      return `Consolidare: ${s}.`;
+    });
+  } else if(goalsAnnual.length){
+    goalsMedium = goalsAnnual.slice(0, 3).map(x => {
+      const s = String(x).trim().replace(/\.+$/,"").replace(/\.$/,"");
+      return `Avviare progressi verso: ${s}.`;
+    });
   }
-  html.push(listHtmlUnsafe(rows));
-} else {
-  html.push(`<p class="muted">Nessun obiettivo SMART compilato. Usa “Crea/Aggiorna” per generarli dagli obiettivi ICF selezionati.</p>`);
-}
+  if(!goalsMedium.length){
+    goalsMedium.push("Definire 2–4 obiettivi di medio periodo come tappe verso gli obiettivi annuali.");
+  }
 
-html.push(`<h3>5.2 Metodologie didattiche</h3>`);
-html.push(listHtml(methods));
+  html.push(`<h2>Obiettivi educativi di medio periodo</h2>`);
+  html.push(listHtml(goalsMedium));
 
-html.push(`<h2>6. Azioni/attività operative (concrete)</h2>`);
+  html.push(`<h2>Obiettivi educativi annuali</h2>`);
+  html.push(listHtml(goalsAnnual));
 
+  html.push(`<h2>Obiettivi operativi verificabili</h2>`);
+  const smartGoals = getActiveSmartGoals();
+  if(smartGoals.length){
+    const rows = [];
+    let i = 1;
+    for(const g of smartGoals){
+      const title = (g.code ? (g.code + " – ") : "") + (g.label || "Obiettivo");
+      const lines = [];
+      const action = (g.verb || "eseguire") + (g.behavior ? (" " + g.behavior) : "");
+      lines.push(`<b>Obiettivo ${i}</b>: <i>${textEscape(title)}</i>`);
+      if(action.trim()) lines.push(`<b>Azione osservabile</b>: ${textEscape(action.trim())}`);
+      if((g.conditions || "").trim()) lines.push(`<b>Condizioni</b>: ${textEscape(g.conditions.trim())}`);
+      if((g.criterion || "").trim()) lines.push(`<b>Criterio</b>: ${textEscape(g.criterion.trim())}`);
+      if((g.timeframe || "").trim()) lines.push(`<b>Tempo</b>: ${textEscape(g.timeframe.trim())}`);
+      const toolLabel = (VERIFY_TOOLS.find(t => t.key === g.verifyTool) || {}).label || "";
+      if(toolLabel) lines.push(`<b>Verifica</b>: ${textEscape(toolLabel)}`);
+      if((g.responsible || "").trim()) lines.push(`<b>Responsabile</b>: ${textEscape(g.responsible.trim())}`);
+      if((g.notes || "").trim()) lines.push(`<b>Note/strategie</b>: ${textEscape(g.notes.trim())}`);
+      rows.push(lines.join("<br>"));
+      i++;
+    }
+    html.push(listHtmlUnsafe(rows));
+  } else {
+    html.push(`<p class="muted">Nessun obiettivo operativo compilato. Usa “Crea/Aggiorna” per generarli dagli obiettivi ICF selezionati oppure aggiungine uno manualmente.</p>`);
+  }
+
+  /* =========================
+   *  STRATEGIE E PIANO OPERATIVO
+   * ========================= */
+  html.push(`<h2>Strategie educative e metodologiche</h2>`);
+  html.push(listHtml(methods));
+
+  html.push(`<h2>Azioni e attività previste</h2>`);
   html.push(actions.length ? listHtml(actions) : `<p class="muted">Definire attività coerenti con obiettivi e contesto.</p>`);
 
-  html.push(`<h2>7. Organizzazione, setting d’aula e accessibilità</h2>`);
+  html.push(`<h2>Setting educativo e organizzazione</h2>`);
   html.push(setting.length ? listHtml(setting) : `<p class="muted">Definire facilitazioni ambientali coerenti con i bisogni osservati.</p>`);
 
-  html.push(`<h2>8. Strumenti compensativi e tecnologie</h2>`);
+  html.push(`<h2>Strumenti e supporti</h2>`);
   html.push(tools.length ? listHtml(tools) : `<p class="muted">Selezionare 2–4 strumenti davvero usabili e sostenibili.</p>`);
 
-  html.push(`<h2>9. Misure dispensative / adattamenti (se necessari e motivati)</h2>`);
+  html.push(`<h2>Misure di personalizzazione e adattamento</h2>`);
   html.push(dispensations.length ? listHtml(dispensations) : `<p class="muted">Adattare quantità/tempi senza abbassare l’obiettivo essenziale.</p>`);
 
-  html.push(`<h2>10. Valutazione e verifica</h2>`);
+  html.push(`<h2>Verifica, valutazione e monitoraggio</h2>`);
   html.push(assessment.length ? listHtml(assessment) : `<p class="muted">Verifiche adattate a formato/tempo; criteri trasparenti (rubrica semplice).</p>`);
-
-  html.push(`<h2>11. Collaborazione scuola–famiglia–servizi</h2>`);
-  html.push(collaboration.length ? listHtml(collaboration) : `<p class="muted">Incontri periodici con agenda; strategie condivise e lessico comune.</p>`);
-
-  html.push(`<h2>12. Monitoraggio e revisione</h2>`);
   html.push(listHtml(monitoring));
 
-  html.push(`<div class="boxNote"><b>Promemoria:</b> bozza da adattare nel PEI/ICF (GLO) e da verificare con osservazioni in classe. Evitare dati sensibili non necessari (privacy).</div>`);
+  html.push(`<h2>Collaborazione e corresponsabilità educativa</h2>`);
+  html.push(collaboration.length ? listHtml(collaboration) : `<p class="muted">Incontri periodici con agenda; strategie condivise e lessico comune.</p>`);
 
+  html.push(`<div class="boxNote"><b>Nota:</b> la presente scheda è uno strumento di supporto alla progettazione educativa e non sostituisce la redazione formale del PEI. Evitare dati sensibili non necessari (privacy).</div>`);
   return htmlJoin(html);
 }
 
@@ -2958,7 +3095,7 @@ s.icd.codes = cleanIcdCodes(s.icd.codes);
       snapshot: (cur.snapshot && typeof cur.snapshot === "object") ? cur.snapshot : null
     };
   }
-// SMART goals (Sez. 5)
+// SMART goals
 s.icf.smartGoals = Array.isArray(s.icf.smartGoals) ? s.icf.smartGoals : [];
 const cleaned = [];
 for(const g of s.icf.smartGoals){
@@ -3129,8 +3266,11 @@ function resetAll(){
 }
 
 function exportJSON(){
-  const blob = new Blob([JSON.stringify(state, null, 2)], {type:"application/json"});
-  const a = document.createElement("a");
+  const out = (typeof structuredClone === "function") ? structuredClone(state) : JSON.parse(JSON.stringify(state));
+  out.meta = out.meta || {};
+  out.meta.document_preamble = "Documento di progettazione educativa a supporto della redazione del PEI. Non costituisce PEI formale.";
+  const blob = new Blob([JSON.stringify(out, null, 2)], {type:"application/json"});
+const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
 
   const rawName = (state.meta && state.meta.profileName ? state.meta.profileName : "").trim();
@@ -3240,9 +3380,9 @@ function buildPremessaAI(ordineRaw){
     titolo: "Interventi per l’alunno/a: obiettivi educativi e didattici, strumenti, strategie e modalità",
     istruzioni: [
       "Compilare per ciascuna dimensione A–D: Obiettivi (con esiti attesi), Interventi/strategie/strumenti, Verifica (metodi/criteri/strumenti).",
-      "Limitare gli obiettivi SMART a massimo 2 per ciascuna dimensione (A–D), selezionando i più rilevanti."
+      "Limitare gli obiettivi SMART generati automaticamente a massimo 1 per ciascuna dimensione (A–D); l'utente può comunque aggiungerne altri manualmente se necessario."
     ],
-    vincoli_smart: { max_per_dimension: 2 }
+    vincoli_smart: { max_per_dimension: 1 }
   },
   "6": {
     titolo: "Osservazioni sul contesto: barriere e facilitatori",
@@ -3313,11 +3453,11 @@ function buildPremessaAI(ordineRaw){
     titolo: "Interventi per lo studente (obiettivi, strategie e strumenti)",
     istruzioni: [
       "Strutturare in 4 parti: a, b, c, d coerenti con le dimensioni PEI (relazione; comunicazione; autonomia; cognitivo-apprendimento).",
-      "Limitare gli obiettivi SMART a massimo 2 per ciascuna dimensione (a/b/c/d), selezionando i più rilevanti rispetto al quadro complessivo.",
+      "Limitare gli obiettivi SMART generati automaticamente a massimo 1 per ciascuna dimensione (a/b/c/d); lo/a studente e il team possono aggiungerne altri manualmente se necessario.",
       "Per ogni dimensione: presentare obiettivi (con esiti attesi), interventi/strategie/strumenti, e verifica (metodi/criteri/strumenti)."
     ],
     vincoli_smart: {
-      max_per_dimension: 2
+      max_per_dimension: 1
     }
   },
   "6": {
@@ -3370,7 +3510,14 @@ function buildPEIJsonBridge(s = state){
   // Assicura che l'output sia aggiornato e che esista lo snapshot del piano
   try{ buildPEIHTML(); }catch(e){}
   const snap = (window.__peiLast && typeof window.__peiLast === "object") ? window.__peiLast : {};
+  const dDocs = (s && s.docs && typeof s.docs === "object") ? s.docs : {};
+  const hasDocDate = (v) => {
+    if(v === null || typeof v === "undefined") return false;
+    const sVal = String(v).trim();
+    return sVal.length > 0;
+  };
 
+  
   // Profilo ADA (tabella)
   const profRows = [];
   for(const d of DISABILITA){
@@ -3453,6 +3600,7 @@ function buildPEIJsonBridge(s = state){
   const premessa = buildPremessaAI((s.meta && s.meta.ordine) || "");
 
   return {
+    document_preamble: "Documento di progettazione educativa a supporto della redazione del PEI. Non costituisce PEI formale.",
     _premessa_ai: premessa,
     pei_miur: {
       versione_modello: "DM182_2020",
@@ -3469,11 +3617,28 @@ function buildPEIJsonBridge(s = state){
         titolo: "Quadro informativo",
         dati: { meta: (s.meta || {}), contesto: { famiglia: (s.familyCtx||{}), scuola: (s.schoolCtx||{}) } },
         documenti: {
-          accertamento_disabilita: { data_rilascio: (s.meta && s.meta.accertamento_data) || "", rivedibilita: (s.meta && s.meta.accertamento_rivedibilita) || "" },
-          profilo_funzionamento: { disponibile: !!(s.meta && s.meta.pf_disponibile), data_redazione: (s.meta && s.meta.pf_data) || "" },
-          diagnosi_funzionale: { data_redazione: (s.meta && s.meta.df_data) || "" },
-          profilo_dinamico_funzionale: { data_approvazione: (s.meta && s.meta.pdf_data) || "" },
-          progetto_individuale: { presente: !!(s.meta && s.meta.progetto_individuale_presente), data: (s.meta && s.meta.progetto_individuale_data) || "" }
+          accertamento_disabilita: {
+            presente: hasDocDate(dDocs.accertamentoDate),
+            data_rilascio: dDocs.accertamentoDate || "",
+            rivedibilita_presente: hasDocDate(dDocs.scadenzaDate),
+            rivedibilita_data: dDocs.scadenzaDate || ""
+          },
+          profilo_funzionamento: {
+            presente: hasDocDate(dDocs.pfRedattoDate),
+            data_redazione: dDocs.pfRedattoDate || ""
+          },
+          diagnosi_funzionale: {
+            presente: hasDocDate(dDocs.dfDate),
+            data_redazione: dDocs.dfDate || ""
+          },
+          profilo_dinamico_funzionale: {
+            presente: hasDocDate(dDocs.pdfDate),
+            data_approvazione: dDocs.pdfDate || ""
+          },
+          progetto_individuale: {
+            presente: hasDocDate(dDocs.progettoIndDate),
+            data: dDocs.progettoIndDate || ""
+          }
         }
       };
 
@@ -3896,7 +4061,7 @@ function exportDocx(){
   const blob = window.htmlDocx.asBlob(html);
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = "PEI_bozza.docx";
+  a.download = "Scheda_sintesi_PEI.docx";
   a.click();
   URL.revokeObjectURL(a.href);
   toast("DOCX esportato 🟦");
@@ -4058,12 +4223,35 @@ assert("storageAvailable: boolean", typeof storageAvailable() === "boolean");
 
 function init(){
   renderTable();
+  renderDocs();
   renderNeeds();
   renderFamilyCtx();
   renderSchoolCtx();
   renderICF();
   ensureIcdState();
   renderICD();
+
+  // Documentazione (atti/date)
+  const bindDocDate = (id, key) => {
+    const el = document.getElementById(id);
+    if(!el) return;
+    el.addEventListener("change", () => {
+      ensureDocs();
+      state.docs[key] = el.value || "";
+      renderDocs();
+      renderOutput();
+      saveLocal();
+    });
+  };
+
+  bindDocDate("accertamentoDate", "accertamentoDate");
+  bindDocDate("scadenzaDate", "scadenzaDate");
+  bindDocDate("pfRedattoDate", "pfRedattoDate");
+  bindDocDate("dfDate", "dfDate");
+  bindDocDate("pdfDate", "pdfDate");
+
+  bindDocDate("progettoIndDate", "progettoIndDate");
+
   ensureDfpfState();
   renderDiagICF();
   bindMeta();
@@ -4155,7 +4343,7 @@ function initHelpMode(){
     },
     icdCard: {
       title: "ICD-10",
-      body: "Aggiunge codici diagnostici (se presenti nella documentazione): vengono riportati nel Quadro iniziale (Sez.1) come riferimento, senza cambiare da soli gli obiettivi didattici."
+      body: "Aggiunge codici diagnostici (se presenti nella documentazione): vengono riportati nel quadro iniziale (profilo di sintesi) come riferimento, senza cambiare da soli gli obiettivi didattici."
     },
     btnGenerate: {
       title: "Aggiorna PEI",
@@ -4203,15 +4391,15 @@ function initHelpMode(){
   // Auto-help: copre *tutti* i controlli dell'index (input/select/textarea/button e container principali).
   // Se un elemento non è presente nella mappa HELP, genera un tooltip leggendo la label associata o il testo del bottone.
   const ACTION_FALLBACK = {
-    btnIcdAdd: "Aggiunge il codice ICD selezionato alla lista; il codice verrà riportato nel Quadro iniziale (Sez.1).",
+    btnIcdAdd: "Aggiunge il codice ICD selezionato alla lista; il codice verrà riportato nel quadro iniziale (profilo di sintesi).",
     btnIcdReset: "Svuota la lista ICD selezionata; rimuove i riferimenti ICD dall'output.",
     btnDiagIcfClear: "Pulisce ricerca e filtri della lista ICF DF/PF.",
     btnDiagIcfReset: "Azzera tutte le selezioni ICF DF/PF (riparti da zero).",
     btnIcfClear: "Pulisce la ricerca degli obiettivi ICF e mostra di nuovo l'elenco completo.",
-    btnMethodAdd: "Aggiunge la metodologia scelta alla lista; confluisce nella Sezione 5.2 dell'output.",
+    btnMethodAdd: "Aggiunge la metodologia scelta alla lista; confluisce nella Strategie educative e metodologiche nell'output.",
     btnMethodsAuto: "Ripristina i suggerimenti automatici di metodologie coerenti con il profilo/ICF.",
     btnMethodsClear: "Azzera la selezione delle metodologie (imposta override per evitare riattivazioni automatiche).",
-    btnSmartSync: "Crea/Aggiorna obiettivi SMART partendo dagli obiettivi ICF selezionati; influisce su Sez.5 (interventi/monitoraggio).",
+    btnSmartSync: "Crea/Aggiorna obiettivi SMART partendo dagli obiettivi ICF selezionati; influisce su Obiettivi operativi verificabili e monitoraggio nell'output.",
     btnSmartAddFree: "Aggiunge un obiettivo SMART non collegato direttamente agli ICF selezionati.",
     btnCopy: "Copia l'output formattato negli appunti per incollarlo nel PEI.",
     btnDocx: "Esporta l'output in DOCX (richiede la libreria html-docx).",
@@ -4388,3 +4576,5 @@ init();
     navigator.serviceWorker.register('./service-worker.js').catch(()=>{});
   });
 })();
+
+function ensureDocs(){ if(!state.docs) state.docs={}; }

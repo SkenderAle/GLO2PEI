@@ -9,7 +9,7 @@
 </head>
 <body>
   <header>
-    <h1>🧩 PEI Planner (ADA / L.104) – selezione tabella + ICF + Sez.5 SMART – v4.1 (2026-01-02)</h1>
+    <h1>🧩 PEI Planner (ADA / L.104) – v4.1 (2026-01-02)</h1>
     <p class="sub">
       Offline, senza invio dati. Evita dati identificativi (nome, diagnosi completa): lavora su profilo funzionale e bisogni.
       L’output è una <em>bozza</em> da adattare nel PEI/ICF e condividere nel GLO.
@@ -19,7 +19,55 @@
   <div class="wrap">
     <div class="grid">
 
-      <!-- 1) TABella -->
+      
+      
+      <!-- 0) Documentazione (date e atti) -->
+      <section class="card wide" id="docsCard">
+        <h2>Documentazione e atti</h2>
+        <p class="hint">Compila le date solo se disponibili nella documentazione. Se un documento non è disponibile al momento, lascia vuoto il relativo campo data.</p>
+
+        <div class="docGrid">
+
+          <div class="docTitle">ACCERTAMENTO DELLA CONDIZIONE<br>DI DISABILITÀ IN ETÀ EVOLUTIVA<br>AI FINI DELL’INCLUSIONE SCOLASTICA</div>
+          <div class="docField">
+            <label for="accertamentoDate">Rilasciato in data</label>
+            <input type="date" id="accertamentoDate" data-help="Data di rilascio dell’accertamento della condizione di disabilità in età evolutiva ai fini dell’inclusione scolastica." />
+          </div>
+
+          <div class="docTitle">Scadenza / rivedibilità dell’accertamento</div>
+          <div class="docField">
+            <label for="scadenzaDate">Data</label>
+            <input type="date" id="scadenzaDate" data-help="Data di scadenza o rivedibilità dell’accertamento (se indicata nei documenti)." />
+          </div>
+
+          <div class="docTitle">PROFILO DI FUNZIONAMENTO</div>
+          <div class="docField">
+            <label for="pfRedattoDate">Redatto in data</label>
+            <input type="date" id="pfRedattoDate" data-help="Data di redazione del Profilo di Funzionamento (se disponibile)." />
+          </div>
+
+          <div class="docTitle">DIAGNOSI FUNZIONALE</div>
+          <div class="docField">
+            <label for="dfDate">Redatta in data</label>
+            <input type="date" id="dfDate" data-help="Data di redazione della Diagnosi Funzionale (fase transitoria, se presente)." />
+          </div>
+
+          <div class="docTitle">PROFILO DINAMICO FUNZIONALE</div>
+          <div class="docField">
+            <label for="pdfDate">Approvato in data</label>
+            <input type="date" id="pdfDate" data-help="Data di approvazione del Profilo Dinamico Funzionale (fase transitoria, se presente)." />
+          </div>
+
+          <div class="docTitle">PROGETTO INDIVIDUALE (L. 328/2000)</div>
+          <div class="docField">
+            <label for="progettoIndDate">Redatto in data</label>
+            <input type="date" id="progettoIndDate" data-help="Data di redazione del Progetto Individuale (L. 328/2000), se presente." />
+          </div>
+
+        </div>
+      </section>
+
+<!-- 1) TABella -->
       <section class="card wide">
         <h2>
           <span>1) Seleziona profilo dalla tabella</span>
@@ -106,7 +154,7 @@
       <!-- 2) Contesto + ICF + Output -->
       <section class="card">
         <h2>
-          <span>2) Contesto, ICF e Output PEI</span>
+          <span>Contesto famiglia e scuola + ICF</span>
           <small>età, contesto, obiettivi e proposta</small>
         </h2>
         <div class="body">
@@ -379,7 +427,7 @@
           </div>
 
 <div class="sectionTitle">
-            <h3>Sezione 5 (Modello nazionale) – Obiettivi SMART, interventi e monitoraggio</h3>
+            <h3>Obiettivi SMART, interventi e monitoraggio</h3>
             <span class="note">template guidato (verbi operativi, criteri, tempi, verifica)</span>
           </div>
 
@@ -470,6 +518,8 @@
   <script src="https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.js"></script>
 
 <script src="assets/js/app.js?v=2026-01-05" defer></script>
+
+  <footer class="app-footer" role="contentinfo">© 2026 prof. Alessandro Zilli - Udine - Tutti i diritti riservati.</footer>
 
 </body>
 </html>
