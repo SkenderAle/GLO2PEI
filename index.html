@@ -364,11 +364,7 @@
           <div class="icfGrid">
             <div class="panel">
               <p class="pt"><b>Obiettivi ICF</b> (funzioni/attività e partecipazione)</p>
-              <div class="search">
-                <input id="icfSearch" type="text" placeholder="Cerca (es. attenzione, comunicazione, autonomia...)" />
-                <button class="btn" type="button" id="btnIcfClear">Pulisci</button>
-              </div>
-              <div id="icfObjectivesMount"></div>
+<div id="icfObjectivesMount"></div>
               <div class="row" style="margin-top:10px">
                 <label for="icfCustom">Obiettivi personalizzati (uno per riga)</label>
                 <textarea id="icfCustom" placeholder="es. aumentare autonomia nel gestire materiale; usare richiesta di pausa in modo funzionale..."></textarea>
@@ -498,25 +494,19 @@
 
           <div class="actions">
             <button class="btn" id="btnCopy" type="button">📋 Copia (formattato)</button>
-            <button class="btn" id="btnDocx" type="button">🟦 Esporta DOCX</button>
+            <button class="btn" id="btnPrint" type="button">🖨️ Stampa</button>
             <button class="btn" id="btnExport" type="button">⬇️ Esporta JSON</button>
             <button class="btn" id="btnExportPEI" type="button">⬇️ Esporta PEI (JSON ponte)</button>
             <button class="btn" id="btnImport" type="button">⬆️ Importa JSON</button>
             <input id="fileImport" type="file" accept="application/json" style="display:none" />
           </div>
 
-          <p class="note" style="margin-top:10px">
-            L’export DOCX usa una libreria JS: se vuoi usarlo <b>offline</b>, scarica il file <i>html-docx.js</i> e linkalo localmente.
-          </p>
+          <p class="note" style="margin-top:10px"></p>
         </div>
       </section>
 
     </div>
   </div>
-
-  <!-- Libreria per export DOCX (via CDN). Per uso offline: scarica e sostituisci con un percorso locale. -->
-  <script src="https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.js"></script>
-
 <script src="assets/js/app.js?v=2026-01-05" defer></script>
 
   <footer class="app-footer" role="contentinfo">© 2026 prof. Alessandro Zilli - Udine - Tutti i diritti riservati.</footer>

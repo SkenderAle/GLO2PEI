@@ -623,3 +623,101 @@
   font-size: 0.9rem;
   opacity: 0.85;
 }
+
+
+/* ICF objectives: dropdown + chips */
+
+.icfChooser{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+
+.icfSelect{
+  width:100%;
+  padding:10px 12px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.12);
+  background: rgba(10,14,20,.55);
+  color: rgba(231,237,245,.95);
+}
+
+.icfChips{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+}
+
+.icfChip{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:8px 10px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.10);
+  background: rgba(16,24,39,.45);
+  max-width:100%;
+}
+
+.icfChip .code{
+  font-weight:700;
+  letter-spacing:.02em;
+  opacity:.95;
+}
+
+.icfChip .label{
+  opacity:.92;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  max-width: 58ch;
+}
+
+.icfChip .chipX{
+  margin-left:4px;
+  width:26px;
+  height:26px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.12);
+  background: rgba(0,0,0,.20);
+  color: rgba(231,237,245,.95);
+  cursor:pointer;
+  line-height: 1;
+}
+
+.icfChip .chipX:hover{
+  background: rgba(255,255,255,.08);
+}
+
+
+
+/* Smaller ICF chips (obiettivi / facilitatori / barriere selezionati) */
+.icfChip{
+  font-size: 12px;
+  line-height: 1.25;
+  padding: 6px 8px;
+  gap: 6px;
+}
+.icfChipText{ font-size: 12px; }
+.icfChipX{
+  width: 20px;
+  height: 20px;
+  font-size: 14px;
+  line-height: 18px;
+}
+
+
+
+/* =========================================================
+   Smaller font for selected ICF in "ICF da documentazione..." list
+   (keep small didascalic foot unchanged)
+   ========================================================= */
+#diagIcfList .dfpfRow{
+  font-size: 12px;
+  line-height: 1.25;
+}
+#diagIcfList .dfpfRow .dfpfCodeCell,
+#diagIcfList .dfpfRow .dfpfTitleCell,
+#diagIcfList .dfpfRow .dfpfQualCell select{
+  font-size: 12px;
+}

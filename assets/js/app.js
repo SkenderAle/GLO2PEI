@@ -1849,7 +1849,8 @@ function renderSchoolCtx(){
 
 
 function renderICF(){
-  const search = (document.getElementById("icfSearch").value || "").trim().toLowerCase();
+  const icfSearchEl = document.getElementById("icfSearch");
+  const search = ((icfSearchEl ? icfSearchEl.value : "") || "").trim().toLowerCase();
 
   const mount = document.getElementById("icfObjectivesMount");
   mount.innerHTML = "";
@@ -1888,78 +1889,156 @@ function renderICF(){
     head.appendChild(btn);
     gWrap.appendChild(head);
 
-    const box = document.createElement("div");
-    box.className = "smallRow";
+    // Dropdown + lista "a vista" degli obiettivi selezionati
+    const chooser = document.createElement("div");
+    chooser.className = "icfChooser";
 
+    const sel = document.createElement("select");
+    sel.className = "icfSelect";
+    sel.innerHTML = `<option value="">+ Aggiungi un obiettivo…</option>`;
     section.objectives.forEach(it => {
       const hay = `${it.code} ${it.label} ${section.title} ${section.subtitle}`.toLowerCase();
       if(search && !hay.includes(search)) return;
-
-      const wrap = document.createElement("label");
-      wrap.className = "toggle";
-      wrap.style.flex = "1 1 300px";
-      wrap.innerHTML = `<input type="checkbox" ${state.icf.objectives[it.key] ? "checked" : ""} />
-                        <span><b>${textEscape(it.code)}</b> ${textEscape(it.label)}</span>`;
-      wrap.querySelector("input").addEventListener("change", (e) => {
-        state.icf.objectives[it.key] = e.target.checked;
-        renderAllSide();
-      });
-      box.appendChild(wrap);
+      const opt = document.createElement("option");
+      opt.value = it.key;
+      opt.textContent = `${it.code} — ${it.label}`;
+      sel.appendChild(opt);
     });
 
-    gWrap.appendChild(box);
+    sel.addEventListener("change", () => {
+      const key = sel.value;
+      if(!key) return;
+      state.icf.objectives[key] = true;
+      // Se il preset era stato applicato, questa è comunque una scelta "confermata" dal docente: non serve bloccare nulla,
+      // ma aggiorniamo subito la UI.
+      sel.value = "";
+      renderICF();
+      renderAllSide();
+    });
+
+    chooser.appendChild(sel);
+
+    const chips = document.createElement("div");
+    chips.className = "icfChips";
+
+    // Mostra SOLO i selezionati (manuali o preset), sempre modificabili/eliminabili
+    section.objectives.forEach(it => {
+      if(!state.icf.objectives[it.key]) return;
+
+      const chip = document.createElement("div");
+      chip.className = "icfChip";
+      chip.innerHTML = `<span class="code">${textEscape(it.code)}</span>
+                        <span class="label">${textEscape(it.label)}</span>`;
+
+      const x = document.createElement("button");
+      x.type = "button";
+      x.className = "chipX";
+      x.title = "Rimuovi";
+      x.setAttribute("aria-label", "Rimuovi obiettivo");
+      x.textContent = "×";
+      x.addEventListener("click", () => {
+        state.icf.objectives[it.key] = false;
+        renderICF();
+        renderAllSide();
+      });
+
+      chip.appendChild(x);
+      chips.appendChild(chip);
+    });
+
+    chooser.appendChild(chips);
+    gWrap.appendChild(chooser);
     mount.appendChild(gWrap);
   });
 
+  
+  // === Facilitatori / Barriere: menu a tendina + contenitore selezionati ===
   const facMount = document.getElementById("icfFacMount");
-  facMount.innerHTML = "";
-
-  ICF_SECTIONS.forEach(section => {
-    const head = document.createElement("div");
-    head.className = "note";
-    head.style.margin = "10px 0 6px";
-    head.innerHTML = `<b>${textEscape(section.title)}</b>`;
-    facMount.appendChild(head);
-
-    section.facilitators.forEach(it => {
-      const wrap = document.createElement("label");
-      wrap.className = "toggle";
-      wrap.innerHTML = `<input type="checkbox" ${state.icf.facilitators[it.key] ? "checked" : ""} />
-                        <span><b>${textEscape(it.code)}</b> ${textEscape(it.label)}</span>`;
-      wrap.querySelector("input").addEventListener("change", (e) => {
-        state.icf.facilitators[it.key] = e.target.checked;
-        if(state.icf.overrides && state.icf.overrides.facilitators) state.icf.overrides.facilitators[it.key] = true;
-        renderAllSide();
-      });
-      facMount.appendChild(wrap);
-    });
-  });
-
   const barMount = document.getElementById("icfBarMount");
+  facMount.innerHTML = "";
   barMount.innerHTML = "";
 
-  ICF_SECTIONS.forEach(section => {
-    const head = document.createElement("div");
-    head.className = "note";
-    head.style.margin = "10px 0 6px";
-    head.innerHTML = `<b>${textEscape(section.title)}</b>`;
-    barMount.appendChild(head);
+  const facAll = allIcfFacilitators();
+  const barAll = allIcfBarriers();
 
-    section.barriers.forEach(it => {
-      const wrap = document.createElement("label");
-      wrap.className = "toggle";
-      wrap.innerHTML = `<input type="checkbox" ${state.icf.barriers[it.key] ? "checked" : ""} />
-                        <span><b>${textEscape(it.code)}</b> ${textEscape(it.label)}</span>`;
-      wrap.querySelector("input").addEventListener("change", (e) => {
-        state.icf.barriers[it.key] = e.target.checked;
-        if(state.icf.overrides && state.icf.overrides.barriers) state.icf.overrides.barriers[it.key] = true;
+  function buildDropdownWithChips({ mountEl, items, stateMap, overridesMap, placeholder }){
+    // Select
+    const sel = document.createElement("select");
+    sel.className = "icfSelect";
+    sel.innerHTML = `<option value="">${textEscape(placeholder)}</option>`;
+    // Popola (con filtro sulla search globale, se presente)
+    const filtered = items.filter(it => {
+      if(!search) return true;
+      const hay = `${it.code} ${it.label}`.toLowerCase();
+      return hay.includes(search);
+    });
+
+    // Ordina per code
+    filtered.sort((a,b) => (a.code || "").localeCompare(b.code || ""));
+
+    filtered.forEach(it => {
+      const opt = document.createElement("option");
+      opt.value = it.key;
+      opt.textContent = `${it.code} — ${it.label}`;
+      sel.appendChild(opt);
+    });
+
+    sel.addEventListener("change", () => {
+      const key = sel.value;
+      if(!key) return;
+      stateMap[key] = true;
+      if(overridesMap) overridesMap[key] = true;
+      sel.value = "";
+      renderICF();
+      renderAllSide();
+    });
+
+    // Chips container
+    const chips = document.createElement("div");
+    chips.className = "icfChips";
+
+    // Selezionati (manteniamo l'ordine per code)
+    const selected = items
+      .filter(it => stateMap[it.key])
+      .sort((a,b) => (a.code || "").localeCompare(b.code || ""));
+
+    selected.forEach(it => {
+      const chip = document.createElement("div");
+      chip.className = "icfChip";
+      chip.innerHTML = `
+        <span class="icfChipText"><b>${textEscape(it.code)}</b> ${textEscape(it.label)}</span>
+        <button class="icfChipX" type="button" aria-label="Rimuovi">×</button>
+      `;
+      chip.querySelector("button").addEventListener("click", () => {
+        stateMap[it.key] = false;
+        if(overridesMap) overridesMap[it.key] = true;
+        renderICF();
         renderAllSide();
       });
-      barMount.appendChild(wrap);
+      chips.appendChild(chip);
     });
+
+    mountEl.appendChild(sel);
+    mountEl.appendChild(chips);
+  }
+
+  buildDropdownWithChips({
+    mountEl: facMount,
+    items: facAll,
+    stateMap: state.icf.facilitators,
+    overridesMap: (state.icf.overrides && state.icf.overrides.facilitators) ? state.icf.overrides.facilitators : null,
+    placeholder: "Aggiungi facilitatore (es. e310 famiglia, e325 compagni...)"
   });
 
-  const rMount = document.getElementById("resourcesMount");
+  buildDropdownWithChips({
+    mountEl: barMount,
+    items: barAll,
+    stateMap: state.icf.barriers,
+    overridesMap: (state.icf.overrides && state.icf.overrides.barriers) ? state.icf.overrides.barriers : null,
+    placeholder: "Aggiungi barriera (es. e250 rumore, e310 comunicazione famiglia...)"
+  });
+
+const rMount = document.getElementById("resourcesMount");
   rMount.innerHTML = "";
   RESOURCES.forEach(r => {
     const wrap = document.createElement("label");
@@ -2354,6 +2433,10 @@ function renderChipsAndKpis(){
       el.querySelector(".x").addEventListener("click", () => {
         c.remove();
         hydrateMetaUI();
+        ensureDocs();
+        renderDocs();
+        ensureDocs();
+        renderDocs();
         hydrateICFUI();
         renderTable();
         renderNeeds();
@@ -2628,17 +2711,18 @@ collaboration.push("Patto educativo condiviso e coerenza tra adulti; rinforzi ch
   // Documentazione e atti (sintesi)
   const docs = state.docs || {};
   const docLines = [];
-  if(docs.accertamentoDate) docLines.push(`Accertamento (rilasciato): ${fmtDate(docs.accertamentoDate)}`);
-  if(docs.scadenzaDate) docLines.push(`Scadenza/Rivedibilità: ${fmtDate(docs.scadenzaDate)}`);
-  if(docs.pfRedattoDate) docLines.push(`Profilo di Funzionamento (redatto): ${fmtDate(docs.pfRedattoDate)}`);
-  if(docs.dfDate) docLines.push(`Diagnosi Funzionale (redatta): ${fmtDate(docs.dfDate)}`);
-  if(docs.pdfDate) docLines.push(`Profilo Dinamico Funzionale (approvato): ${fmtDate(docs.pdfDate)}`);
-  if(docs.progettoIndDate) docLines.push(`Progetto Individuale (redatto): ${fmtDate(docs.progettoIndDate)}`);
+  const addDoc = (label, dateStr) => {
+    if(dateStr) docLines.push(`${label}: ${fmtDate(dateStr)}`);
+    else docLines.push(`${label}: non presente`);
+  };
+  addDoc("Accertamento (rilasciato)", docs.accertamentoDate);
+  addDoc("Scadenza/Rivedibilità", docs.scadenzaDate);
+  addDoc("Profilo di Funzionamento (redatto)", docs.pfRedattoDate);
+  addDoc("Diagnosi Funzionale (redatta)", docs.dfDate);
+  addDoc("Profilo Dinamico Funzionale (approvato)", docs.pdfDate);
+  addDoc("Progetto Individuale (redatto)", docs.progettoIndDate);
 
-  if(docLines.length){
-    html.push(`<div class="box"><h2>Documentazione e atti</h2>${listHtml(docLines)}</div>`);
-  }
-
+  html.push(`<div class="box"><h2>Documentazione e atti</h2>${listHtml(docLines)}</div>`);
 if(meta.profileName && meta.profileName.trim()){
     html.push(`<p><b>Profilo:</b> ${textEscape(meta.profileName.trim())}</p>`);
   }
@@ -2949,11 +3033,17 @@ function bindMeta(){
     el.addEventListener("change", sync);
   });
 
-  document.getElementById("icfSearch").addEventListener("input", () => renderICF());
-  document.getElementById("btnIcfClear").addEventListener("click", () => {
-    document.getElementById("icfSearch").value = "";
-    renderICF();
-  });
+  const icfSearchEl2 = document.getElementById("icfSearch");
+  if(icfSearchEl2){
+    icfSearchEl2.addEventListener("input", () => renderICF());
+  }
+  const btnIcfClear = document.getElementById("btnIcfClear");
+  if(btnIcfClear && icfSearchEl2){
+    btnIcfClear.addEventListener("click", () => {
+      icfSearchEl2.value = "";
+      renderICF();
+    });
+  }
 }
 
 function hydrateMetaUI(){
@@ -3866,7 +3956,35 @@ function exportPEIJSON(){
  *  Import: supporta sia lo stato interno dell'app sia il JSON ponte (PEI_PONTE)
  *  ========================= */
 function isBridgeJson(obj){
-  return !!(obj && typeof obj === "object" && obj._premessa_ai && obj.sezioni_miur && obj.meta && obj.profilo_ADA);
+  if(!obj || typeof obj !== "object") return false;
+  const sm = obj.sezioni_miur;
+
+  // Accetta sia array che oggetto indicizzato ("1","2",...)
+  let first = null;
+  if(Array.isArray(sm) && sm.length){
+    first = sm[0];
+  } else if(sm && typeof sm === "object"){
+    // preferisci la sezione "1" se presente (come nei JSON ponte più recenti)
+    if(sm["1"]) first = sm["1"];
+    else {
+      const keys = Object.keys(sm);
+      if(keys.length) first = sm[keys.sort()[0]];
+    }
+  }
+
+  if(!first || typeof first !== "object") return false;
+
+  // Riconoscimento "tollerante" del JSON ponte:
+  // basta che nella prima sezione compaia uno dei blocchi tipici
+  return !!(
+    first.documenti ||
+    first.dimensioni ||
+    first.obiettivi ||
+    first.profilo_dinamico_funzionale ||
+    first.quadro_informativo ||
+    first.metodologie ||
+    first.dati
+  );
 }
 
 function bridgeToState(b){
@@ -3903,7 +4021,36 @@ function bridgeToState(b){
     if(sc.ctx && typeof sc.ctx === "object") s.schoolCtx.ctx = { ...s.schoolCtx.ctx, ...sc.ctx };
   }
 
-  // Profilo ADA -> righe tabella disabilità
+  
+  // Documenti (da JSON ponte): sezioni_miur[1] (o [0]) .documenti -> state.docs
+  try{
+    const sm = b.sezioni_miur;
+    let sez1 = null;
+    if(Array.isArray(sm) && sm.length){
+      sez1 = sm[0];
+    } else if(sm && typeof sm === "object"){
+      sez1 = sm["1"] || sm[Object.keys(sm).sort()[0]];
+    }
+    const doc = (sez1 && typeof sez1 === "object" && sez1.documenti && typeof sez1.documenti === "object") ? sez1.documenti : null;
+    if(doc){
+      s.docs = s.docs || {};
+      const acc = doc.accertamento_disabilita || {};
+      const pf  = doc.profilo_funzionamento || {};
+      const df  = doc.diagnosi_funzionale || {};
+      const pdf = doc.profilo_dinamico_funzionale || {};
+      const pi  = doc.progetto_individuale || {};
+
+      if(typeof acc.data_rilascio === "string") s.docs.accertamentoDate = acc.data_rilascio;
+      if(typeof acc.rivedibilita_data === "string") s.docs.scadenzaDate = acc.rivedibilita_data;
+      if(typeof pf.data_redazione === "string") s.docs.pfRedattoDate = pf.data_redazione;
+      if(typeof df.data_redazione === "string") s.docs.dfDate = df.data_redazione;
+      if(typeof pdf.data_approvazione === "string") s.docs.pdfDate = pdf.data_approvazione;
+      if(typeof pi.data === "string") s.docs.progettoIndDate = pi.data;
+    }
+  } catch(e) { /* ignore */ }
+
+
+// Profilo ADA -> righe tabella disabilità
   const ada = (b.profilo_ADA && typeof b.profilo_ADA === "object") ? b.profilo_ADA : {};
   const righe = Array.isArray(ada.righe) ? ada.righe : [];
   for(const row of righe){
@@ -3993,9 +4140,11 @@ function importJSON(file){
     try{
       const data = JSON.parse(String(reader.result || ""));
       if(data && typeof data === "object"){
-        const raw = isBridgeJson(data) ? bridgeToState(data) : data;
+        const raw = (isBridgeJson(data) || (data && data.sezioni_miur && typeof data.sezioni_miur === 'object')) ? bridgeToState(data) : data;
         state = normalizeState(raw);
         hydrateMetaUI();
+        ensureDocs();
+        renderDocs();
         hydrateICFUI();
         renderTable();
         renderFamilyCtx();
@@ -4015,6 +4164,67 @@ function importJSON(file){
   };
   reader.readAsText(file);
 }
+
+
+function printOutputRich(){
+  // Stampa locale: invia alla stampante (o “Salva come PDF”) lo stesso HTML copiato da “Copia (formattato)”.
+  // Non modifica la pagina principale e non richiede internet.
+  const html = buildPEIHTML();
+
+  // Crea iframe di stampa (se non esiste)
+  let frame = document.getElementById("printFrame");
+  if(!frame){
+    frame = document.createElement("iframe");
+    frame.id = "printFrame";
+    frame.style.position = "fixed";
+    frame.style.right = "0";
+    frame.style.bottom = "0";
+    frame.style.width = "0";
+    frame.style.height = "0";
+    frame.style.border = "0";
+    frame.style.opacity = "0";
+    frame.style.pointerEvents = "none";
+    document.body.appendChild(frame);
+  }
+
+  const doc = frame.contentWindow.document;
+  doc.open();
+  doc.write(`<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Stampa – Output PEI</title>
+  <style>
+    body{ font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 18px; }
+    /* Migliora la resa in stampa senza alterare il contenuto */
+    h1,h2,h3{ page-break-after: avoid; }
+    table{ width:100%; border-collapse: collapse; }
+    th,td{ vertical-align: top; }
+    @media print{
+      body{ margin: 0; }
+    }
+  </style>
+</head>
+<body>
+${html}
+</body>
+</html>`);
+  doc.close();
+
+  // Aspetta un attimo il rendering e stampa
+  frame.contentWindow.focus();
+  setTimeout(() => {
+    try{
+      frame.contentWindow.print();
+      toast("Stampa avviata 🖨️");
+    }catch(e){
+      console.error(e);
+      toast("Impossibile avviare la stampa.");
+    }
+  }, 250);
+}
+
 
 function copyOutputRich(){
   const html = buildPEIHTML();
@@ -4305,9 +4515,12 @@ function init(){
     toast("PEI aggiornato ⚙️");
   });
   document.getElementById("btnCopy").addEventListener("click", copyOutputRich);
-  document.getElementById("btnDocx").addEventListener("click", exportDocx);
-
-  document.getElementById("btnSave").addEventListener("click", saveLocal);
+  
+  const btnPrint = document.getElementById("btnPrint");
+  if(btnPrint) btnPrint.addEventListener("click", printOutputRich);
+const btnDocx = document.getElementById("btnDocx");
+  if(btnDocx) btnDocx.addEventListener("click", exportDocx);
+document.getElementById("btnSave").addEventListener("click", saveLocal);
   document.getElementById("btnLoad").addEventListener("click", loadLocal);
   document.getElementById("btnReset").addEventListener("click", resetAll);
 
