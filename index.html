@@ -341,6 +341,7 @@
                   <input id="diagIcfOnlySel" type="checkbox" />
                   <span>Solo selezionati</span>
                 </label>
+                <button class="btn" id="btnApplyIcdToIcf" type="button" title="Suggerisce categorie ICF coerenti con i codici ICD selezionati">💡 Applica suggerimenti ICD → ICF</button>
                 <button class="btn" id="btnDiagIcfClear" type="button">Pulisci</button>
                 <button class="btn danger" id="btnDiagIcfReset" type="button">Azzera ICF</button>
               </div>
@@ -495,7 +496,7 @@
           <div class="actions">
             <button class="btn" id="btnCopy" type="button">📋 Copia (formattato)</button>
             <button class="btn" id="btnPrint" type="button">🖨️ Stampa</button>
-            <button class="btn" id="btnExport" type="button">⬇️ Esporta JSON</button>
+            <!-- Pulsante Esporta JSON nascosto in UI (funzione mantenuta nel JS per eventuale riattivazione) -->
             <button class="btn" id="btnExportPEI" type="button">⬇️ Esporta PEI (JSON ponte)</button>
             <button class="btn" id="btnImport" type="button">⬆️ Importa JSON</button>
             <input id="fileImport" type="file" accept="application/json" style="display:none" />
@@ -507,7 +508,7 @@
 
     </div>
   </div>
-<script src="assets/js/app.js?v=2026-01-05" defer></script>
+<script src="assets/js/app.js?v=2026-01-09" defer></script>
 
   <footer class="app-footer" role="contentinfo">© 2026 prof. Alessandro Zilli - Udine - Tutti i diritti riservati.</footer>
 

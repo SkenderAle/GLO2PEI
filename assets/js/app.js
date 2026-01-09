@@ -693,8 +693,9 @@ function dfpfTitle(code){
 
 function ensureDfpfState(s = state){
   if(!s.icf) s.icf = {};
-  if(!s.icf.dfpf || typeof s.icf.dfpf !== "object") s.icf.dfpf = { selected: {} };
+  if(!s.icf.dfpf || typeof s.icf.dfpf !== "object") s.icf.dfpf = { selected: {}, suggested: {} };
   if(!s.icf.dfpf.selected || typeof s.icf.dfpf.selected !== "object") s.icf.dfpf.selected = {};
+  if(!s.icf.dfpf.suggested || typeof s.icf.dfpf.suggested !== "object") s.icf.dfpf.suggested = {};
 }
 
 function cleanDfpfSelected(sel){
@@ -707,6 +708,160 @@ function cleanDfpfSelected(sel){
     out[String(code)] = q;
   }
   return out;
+}
+
+// =========================
+//  Suggerimenti ICD → ICF (soft, su pulsante)
+// =========================
+// Nota: i codici ICF sono quelli disponibili nella lista DF/PF dell'app.
+// La mappatura è volutamente "operativa": privilegia categorie che quasi sempre
+// vanno esplorate nel Profilo di Funzionamento per i macro-quadri indicati.
+
+function _normIcd(code){
+  return String(code || "").trim().toUpperCase();
+}
+
+function _icdAny(codes, pred){
+  return (codes || []).some(c => {
+    const x = _normIcd(c);
+    return x ? pred(x) : false;
+  });
+}
+
+const ICD_TO_ICF_SOFT = [
+  {
+    key: "intellettiva",
+    match: (x) => /^F7\d/.test(x) || /^6A00/.test(x) || /^(317|318|319)(\.|$)/.test(x),
+    icf: [
+      "b117","b140","b144","b164","b167",
+      "d155","d160","d210","d220","d230","d310","d315","d330","d350","d360",
+      "d510","d540","d550","d710","d720","d750","d820",
+      "e310","e340","e355","e580","e585","e115","e130"
+    ]
+  },
+  {
+    key: "autismo",
+    match: (x) => /^F84/.test(x) || /^6A02/.test(x) || /^299(\.|$)/.test(x),
+    icf: [
+      "b140","b152","b164","b167",
+      "d310","d315","d320","d330","d350","d360",
+      "d210","d220","d230","d240",
+      "d710","d720","d750","d820",
+      "e125","e130","e250","e340","e450","e460","e580","e585"
+    ]
+  },
+  {
+    key: "fisica",
+    // broad: condizioni motorie/paralisi/malformazioni movimento
+    match: (x) => /^(G80|G81|G82|G83)/.test(x) || /^8D2/.test(x) || /^(342|343|344)(\.|$)/.test(x),
+    icf: [
+      "b730","b735","b760",
+      "s110","s120","s730","s750","s760",
+      "d410","d415","d420","d450","d455","d465",
+      "d510","d520","d540","d550",
+      "d640","d820",
+      "e120","e115","e150","e340","e580"
+    ]
+  },
+  {
+    key: "vista",
+    match: (x) => /^H54/.test(x) || /^(369)(\.|$)/.test(x),
+    icf: [
+      "b210","b2100","b2101","b2102","b1560",
+      "s220","s230",
+      "d110","d160","d166","d170","d315","d320","d450","d460",
+      "d820",
+      "e115","e125","e130","e150","e240"
+    ]
+  },
+  {
+    key: "udito",
+    match: (x) => /^(H90|H91)/.test(x) || /^(389)(\.|$)/.test(x),
+    icf: [
+      "b230",
+      "s250","s260",
+      "d115","d310","d350","d360","d820",
+      "e125","e130","e250","e340","e450","e460"
+    ]
+  },
+  {
+    key: "neurologica",
+    match: (x) => /^G(?!80|81|82|83)\d/.test(x) || /^I6\d/.test(x) || /^(345)(\.|$)/.test(x) || /^6A0/.test(x),
+    icf: [
+      "b110","b140","b144","b152","b164","b760",
+      "s110","s120",
+      "d160","d210","d220","d230","d240",
+      "d410","d450","d455",
+      "d510","d540","d550",
+      "d310","d350","d360",
+      "d820",
+      "e115","e120","e150","e340","e580"
+    ]
+  },
+  {
+    key: "genetiche",
+    match: (x) => /^Q\d\d/.test(x) || /^(758|759)(\.|$)/.test(x) || /^LD4/.test(x),
+    icf: [
+      "b117","b140","b144","b164","b730",
+      "s110","s730","s750",
+      "d155","d160","d210","d220","d230",
+      "d310","d350","d360",
+      "d510","d540","d550",
+      "d710","d750","d820",
+      "e310","e340","e355","e580","e585"
+    ]
+  },
+  {
+    key: "acquisite",
+    match: (x) => /^[ST]/.test(x) || /^T9\d/.test(x) || /^(800|801|802|803|804|905|906|907|908|909|438)(\.|$)/.test(x) || /^I69/.test(x),
+    icf: [
+      "b140","b144","b152","b760",
+      "s110","s120","s730","s750",
+      "d160","d210","d220","d230","d240",
+      "d410","d450","d455",
+      "d510","d540","d550","d640","d820",
+      "e115","e120","e150","e340","e355","e580"
+    ]
+  }
+];
+
+function computeIcfSuggestionsFromIcd(){
+  ensureIcdState();
+  const icdCodes = Array.isArray(state.icd.codes) ? state.icd.codes : [];
+  const out = new Set();
+  for(const entry of ICD_TO_ICF_SOFT){
+    if(_icdAny(icdCodes, entry.match)){
+      for(const c of entry.icf) out.add(String(c));
+    }
+  }
+  // Filtra: tieni solo codici ICF effettivamente presenti nella lista dell'app
+  const filtered = [...out].filter(c => ICF_DFPF_MAP.has(String(c)));
+  return filtered;
+}
+
+function applySoftIcdToIcfSuggestions(){
+  const icdCodes = (state.icd && Array.isArray(state.icd.codes)) ? state.icd.codes : [];
+  if(!icdCodes.length){
+    toast("Seleziona prima uno o più codici ICD.");
+    return;
+  }
+  const suggestions = computeIcfSuggestionsFromIcd();
+  if(!suggestions.length){
+    toast("Nessun suggerimento ICD → ICF disponibile per i codici selezionati.");
+    return;
+  }
+  ensureDfpfState();
+  let added = 0;
+  for(const code of suggestions){
+    if(state.icf.dfpf.selected[code] === undefined){
+      state.icf.dfpf.selected[code] = 2; // moderato: default non invasivo (utente può cambiare)
+      added++;
+    }
+    state.icf.dfpf.suggested[code] = true;
+  }
+  renderDiagICF();
+  renderAllSide();
+  toast(added ? ("Suggerimenti applicati: +" + added + " categorie ICF") : "Suggerimenti aggiornati");
 }
 
 function renderDiagICF(){
@@ -740,6 +895,7 @@ function renderDiagICF(){
     const title = String(it.title || "");
     const chap = String(it.chapter || "");
     const selected = state.icf.dfpf.selected[code];
+    const isSuggested = !!(state.icf.dfpf.suggested && state.icf.dfpf.suggested[code]);
     const row = document.createElement("div");
     row.className = "dfpfRow";
 
@@ -757,7 +913,7 @@ function renderDiagICF(){
         <select class="input dfpfQ" title="Qualificatore 0–4: 0 nessun problema; 1 lieve; 2 moderato; 3 grave; 4 completo" ${selected === undefined ? "disabled" : ""}>${options}</select>
       </div>
       <div class="dfpfDescCell" tabindex="0" role="button" aria-label="Attiva/disattiva ${textEscape(code)}">
-        <div class="dfpfDescTitle">${textEscape(title)}</div>
+        <div class="dfpfDescTitle">${textEscape(title)}${isSuggested ? ' <span class="suggestTag">(suggerito)</span>' : ''}</div>
         <div class="dfpfMeta">${chap ? textEscape(chap) : ""}</div>
       </div>
     `;
@@ -790,6 +946,7 @@ cb.addEventListener("change", (e) => {
         if(state.icf.dfpf.selected[code] === undefined) state.icf.dfpf.selected[code] = 2;
       } else {
         delete state.icf.dfpf.selected[code];
+        if(state.icf.dfpf.suggested) delete state.icf.dfpf.suggested[code];
       }
       renderDiagICF();
       renderAllSide();
@@ -845,7 +1002,7 @@ function createDefaultState(){
         annualDate: "",
         tools: Object.fromEntries(VERIFY_TOOLS.map(t => [t.key, false]))
       },
-      dfpf: { selected: {} }
+      dfpf: { selected: {}, suggested: {} }
     },
 
     plan: {
@@ -3151,6 +3308,11 @@ s.icd.codes = cleanIcdCodes(s.icd.codes);
   s.icf.dfpf = s.icf.dfpf && typeof s.icf.dfpf === "object" ? s.icf.dfpf : {};
   s.icf.dfpf.selected = s.icf.dfpf.selected && typeof s.icf.dfpf.selected === "object" ? s.icf.dfpf.selected : {};
   s.icf.dfpf.selected = cleanDfpfSelected(s.icf.dfpf.selected);
+  s.icf.dfpf.suggested = s.icf.dfpf.suggested && typeof s.icf.dfpf.suggested === "object" ? s.icf.dfpf.suggested : {};
+  // normalizza: mantieni solo booleani
+  for(const [k,v] of Object.entries(s.icf.dfpf.suggested)){
+    if(typeof v !== "boolean") s.icf.dfpf.suggested[k] = !!v;
+  }
 
   s.icf.facilitators = s.icf.facilitators && typeof s.icf.facilitators === "object" ? s.icf.facilitators : {};
   for(const k of Object.keys(d.icf.facilitators)){
@@ -4472,6 +4634,7 @@ function init(){
   const diagOnly = document.getElementById("diagIcfOnlySel");
   const btnDiagClear = document.getElementById("btnDiagIcfClear");
   const btnDiagReset = document.getElementById("btnDiagIcfReset");
+  const btnApplyIcdToIcf = document.getElementById("btnApplyIcdToIcf");
 
   if(diagSearch) diagSearch.addEventListener("input", renderDiagICF);
   if(diagCat) diagCat.addEventListener("change", renderDiagICF);
@@ -4486,9 +4649,30 @@ function init(){
   bindICD();
   bindMethods();
 
+  if(btnApplyIcdToIcf) btnApplyIcdToIcf.addEventListener("click", () => {
+    const suggestions = computeIcfSuggestionsFromIcd();
+    if(!suggestions.length){
+      toast("Nessun suggerimento ICD → ICF disponibile (controlla i codici ICD selezionati).");
+      return;
+    }
+    ensureDfpfState();
+    let added = 0;
+    for(const code of suggestions){
+      if(state.icf.dfpf.selected[code] === undefined){
+        state.icf.dfpf.selected[code] = 2; // default "soft": moderato (coerente con selezione manuale)
+        added++;
+      }
+      state.icf.dfpf.suggested[code] = true;
+    }
+    renderDiagICF();
+    renderAllSide();
+    toast(added ? (`Suggerimenti applicati: +${added} categorie ICF.`) : "Suggerimenti applicati (già selezionati)." );
+  });
+
   if(btnDiagReset) btnDiagReset.addEventListener("click", () => {
     ensureDfpfState();
     state.icf.dfpf.selected = {};
+    state.icf.dfpf.suggested = {};
     renderDiagICF();
     renderAllSide();
     toast("ICF DF/PF azzerati.");
@@ -4522,12 +4706,16 @@ const btnDocx = document.getElementById("btnDocx");
   if(btnDocx) btnDocx.addEventListener("click", exportDocx);
 document.getElementById("btnSave").addEventListener("click", saveLocal);
   document.getElementById("btnLoad").addEventListener("click", loadLocal);
-  document.getElementById("btnReset").addEventListener("click", resetAll);
+  // "Azzera selezioni": per richiesta utente ricarica semplicemente la pagina
+  // (reset completo di stato e campi), senza eseguire logiche di pulizia parziali.
+  document.getElementById("btnReset").addEventListener("click", () => window.location.reload());
 
   // Help mode (tooltips)
   initHelpMode();
 
-  document.getElementById("btnExport").addEventListener("click", exportJSON);
+  // Il pulsante "Esporta JSON" potrebbe non essere visibile in UI: manteniamo la funzione viva.
+  const btnExport = document.getElementById("btnExport");
+  if(btnExport) btnExport.addEventListener("click", exportJSON);
   document.getElementById("btnExportPEI").addEventListener("click", exportPEIJSON);
   document.getElementById("btnImport").addEventListener("click", () => {
     document.getElementById("fileImport").click();

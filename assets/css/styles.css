@@ -552,6 +552,15 @@
 
     .dfpfDescCell{ grid-area:desc; line-height: 1.25; cursor:pointer; }
     .dfpfDescTitle{ font-weight:650; }
+
+    /* Tag per categorie ICF aggiunte come suggerimento (ICD → ICF) */
+    #diagIcfList .suggestTag{
+      font-weight:400;
+      font-style:italic;
+      font-size:11px;
+      color:#666;
+      margin-left:6px;
+    }
     .dfpfMeta{
       color: var(--muted);
       font-size: 12px;
