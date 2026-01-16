@@ -508,6 +508,56 @@
 
     </div>
   </div>
+
+      <section class="card" style="margin-top:14px">
+        <h2>Aggiornamenti database</h2>
+        <p class="note">Gestisci e aggiorna i cataloghi direttamente nell'app (salvataggio locale in IndexedDB). Puoi anche importare/esportare il database in formato Excel XML (2003). I dati vengono salvati in locale (IndexedDB) e recuperati automaticamente nelle sessioni successive. Puoi anche esportare il database aggiornato in un file Excel.</p>
+
+        <div class="actions" style="margin:10px 0 6px; flex-wrap:wrap">
+          <button class="btn" id="btnDbManageICD" type="button">🧩 Gestisci ICD</button>
+          <button class="btn" id="btnDbManageICF" type="button">🧩 Gestisci ICF</button>
+          <button class="btn" id="btnDbManageMethods" type="button">🧩 Gestisci metodologie</button>
+          <button class="btn" id="btnDbManageSemantic" type="button">🧩 Gestisci ricerca semantica ICF</button>
+          <button class="btn" id="btnDbImportExcel" type="button">⬆️ Importa database</button>
+          <button class="btn" id="btnDbExportExcel" type="button">⬇️ Esporta database (Excel)</button>
+          <button class="btn" id="btnDbReset" type="button">♻️ Ripristina predefiniti</button>
+        </div>
+
+        <input id="fileDbImport" type="file" accept=".xml" style="display:none" />
+        <div class="note" id="dbStatus" style="margin-top:8px"></div>
+      </section>
+
+      <section class="card" style="margin-top:14px">
+        <h2>Fonti e trasparenza</h2>
+        <p class="note">Le fonti sotto sono incluse per garantire tracciabilita: normativa e classificazioni (fondative), piu framework e sintesi evidence-based usate per i suggerimenti. Le regole interne dell'app sono dichiarate come euristiche.</p>
+
+        <div class="actions" style="margin:10px 0 6px">
+          <button class="btn" id="btnSourcesModal" type="button">📚 Apri elenco fonti (link)</button>
+        </div>
+      </section>
+
+
+      <!-- Modal: Gestione database (CRUD) -->
+      <div id="dbModal" class="modalOverlay" aria-hidden="true">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="dbModalTitle">
+          <div class="modalHeader">
+            <h3 id="dbModalTitle">Gestione database</h3>
+            <button class="btn" id="btnDbModalClose" type="button" aria-label="Chiudi">✕</button>
+          </div>
+          <div id="dbModalBody" class="modalBody"></div>
+        </div>
+      </div>
+
+      <!-- Modal: Fonti documentali (link cliccabili) -->
+      <div id="sourcesModal" class="modalOverlay" aria-hidden="true">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="sourcesModalTitle">
+          <div class="modalHeader">
+            <h3 id="sourcesModalTitle">Fonti documentali</h3>
+            <button class="btn" id="btnSourcesClose" type="button" aria-label="Chiudi">✕</button>
+          </div>
+          <div id="sourcesModalBody" class="modalBody"></div>
+        </div>
+      </div>
 <script src="assets/js/app.js?v=2026-01-09" defer></script>
 
   <footer class="app-footer" role="contentinfo">© 2026 prof. Alessandro Zilli - Udine - Tutti i diritti riservati.</footer>

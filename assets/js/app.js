@@ -2,7 +2,8 @@
    Scopo: affiancare la ricerca testuale (codice/titolo) con una ricerca "di senso".
    Nota: non seleziona nulla automaticamente; filtra solo la lista di codici.
 */
-const ICF_SEMANTIC_CONCEPTS = [
+// Dataset predefinito (puo essere sovrascritto da IndexedDB)
+const DEFAULT_ICF_SEMANTIC_CONCEPTS = [
   { key:"vista", synonyms:["visivo","occhio","occhi","vedere","guardare","percezione visiva","acuita","campo visivo","illuminazione","contrasto"], codes:{ b:["b210","b2100","b2101","b2102","b1560"], s:["s220","s230"], d:["d110","d160","d166","d170","d315","d320"], e:["e150","e240","e130","e115","e125"] } },
   { key:"udito", synonyms:["uditivo","orecchio","orecchi","sentire","ascolto","ascoltare","comprensione uditiva","rumore"], codes:{ b:["b230"], s:["s260"], d:["d115","d310"], e:["e250","e125","e130"] } },
   { key:"attenzione", synonyms:["concentrazione","distrazione","focalizzare","focus","sostenere l'impegno"], codes:{ b:["b140"], d:["d160","d210","d220"], e:["e250","e130","e580"] } },
@@ -23,8 +24,67 @@ const ICF_SEMANTIC_CONCEPTS = [
   { key:"rumore", synonyms:["affollamento","riverbero","chiasso","confusione"], codes:{ e:["e250"], d:["d115","d310"], b:["b140"] } },
   { key:"tecnologie", synonyms:["tablet","pc","app","software","sintesi vocale","correttore","digitale"], codes:{ e:["e115","e125","e130"] } },
   { key:"ambiente", synonyms:["spazi","setting","classe","organizzazione","tempi rigidi","flessibilita"], codes:{ e:["e150","e580","e250","e130"] } },
-  { key:"caa", synonyms:["comunicazione aumentativa","pittogrammi","simboli","ausili comunicativi"], codes:{ e:["e125"], d:["d360","d330"] } }
+  { key:"caa", synonyms:["comunicazione aumentativa","pittogrammi","simboli","ausili comunicativi"], codes:{ e:["e125"], d:["d360","d330"] , source_id:"NCAEP_2020", evidence_level:"moderata", applicability:"bisogni comunicativi complessi", conditions:"coerenza tra adulti; uso quotidiano; training" } }
 ];
+
+let ICF_SEMANTIC_CONCEPTS = DEFAULT_ICF_SEMANTIC_CONCEPTS;
+
+/* =========================
+ *  Database locale (IndexedDB)
+ *  - salva e recupera i dataset tra sessioni
+ *  - non scrive direttamente sul file XLSX dell'utente
+ * ========================= */
+const DB_NAME = "pei_planner_db";
+const DB_VERSION = 1;
+const DB_STORE = "datasets";
+
+function idbOpen(){
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if(!db.objectStoreNames.contains(DB_STORE)){
+        db.createObjectStore(DB_STORE);
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbGet(key){
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, "readonly");
+    const st = tx.objectStore(DB_STORE);
+    const req = st.get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbSet(key, value){
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, "readwrite");
+    const st = tx.objectStore(DB_STORE);
+    const req = st.put(value, key);
+    req.onsuccess = () => resolve(true);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbDel(key){
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, "readwrite");
+    const st = tx.objectStore(DB_STORE);
+    const req = st.delete(key);
+    req.onsuccess = () => resolve(true);
+    req.onerror = () => reject(req.error);
+  });
+}
+
 
 function _icfNorm(s){
   return String(s||"")
@@ -174,26 +234,147 @@ const NEEDS = [
 ];
 
 /** =========================
+ *  Fonti & tracciabilita
+ *  - catalogo fonti (normativa, classificazioni, framework, practice guides)
+ *  - ogni metodologia/strumento dovrebbe puntare a un source_id
+ * ========================= */
+const SOURCES_CATALOG = {
+  // Fondative (Italia)
+  MI_DI_182_2020: {
+    title: "Portale MIM – Decreto Interministeriale 182/2020 e allegati (Modelli PEI + Linee guida)",
+    kind: "normativa",
+    ref: "https://www.istruzione.it/inclusione-e-nuovo-pei/decreto-interministeriale.html",
+    notes: "Fonte primaria per struttura del PEI e logica delle dimensioni."
+  },
+  MS_LG_CERT_PF_2022: {
+    title: "Ministero della Salute – Linee guida certificazione disabilita in eta evolutiva e Profilo di Funzionamento",
+    kind: "linee_guida_istituzionali",
+    ref: "https://www.salute.gov.it/new/it/pubblicazione/linee-guida-la-redazione-della-certificazione-di-disabilita-eta-evolutiva-ai-fini/",
+    notes: "Riferimenti a ICD e ICF per certificazione e PF."
+  },
+  WHO_ICF: {
+    title: "WHO – International Classification of Functioning, Disability and Health (ICF)",
+    kind: "classificazione",
+    ref: "https://www.who.int/standards/classifications/international-classification-of-functioning-disability-and-health",
+    notes: "Fonte primaria ICF (concetti, struttura e codici)."
+  },
+
+  // Evidence-based / framework
+  CAST_UDL: {
+    title: "CAST – UDL Guidelines",
+    kind: "framework",
+    ref: "https://udlguidelines.cast.org/",
+    notes: "Cornice didattica inclusiva (progettazione universale)."
+  },
+  IES_WWC_PG: {
+    title: "Institute of Education Sciences – What Works Clearinghouse Practice Guides",
+    kind: "practice_guides",
+    ref: "https://ies.ed.gov/ncee/wwc/practiceguides",
+    notes: "Raccomandazioni operative con livello di evidenza."
+  },
+  EEF_TOOLKIT: {
+    title: "Education Endowment Foundation – Teaching and Learning Toolkit",
+    kind: "evidence_synthesis",
+    ref: "https://educationendowmentfoundation.org.uk/education-evidence/teaching-learning-toolkit",
+    notes: "Sintesi di evidenze: impatto/costo/qualita dell'evidenza."
+  },
+  NCAEP_2020: {
+    title: "NCAEP – Evidence-Based Practices for Autism (Report 2020)",
+    kind: "systematic_review",
+    ref: "https://ncaep.fpg.unc.edu/wp-content/uploads/EBP-Report-2020.pdf",
+    notes: "Elenco EBP per autismo da review sistematica."
+  },
+  PBIS_CENTER: {
+    title: "Center on PBIS – PBIS come framework evidence-based",
+    kind: "framework",
+    ref: "https://www.pbis.org/pbis/what-is-pbis",
+    notes: "Cornice tiered per comportamento/clima."
+  },
+
+  // Interno app (euristica)
+  PEI_PLANNER_HEURISTICS: {
+    title: "PEI Planner – regole euristiche interne (preset e suggerimenti soft)",
+    kind: "expert_consensus",
+    ref: "internal",
+    notes: "Suggerimenti non clinici/non normativi: dichiarati come euristici."
+  }
+};
+
+function sourceLabel(source_id){
+  const s = SOURCES_CATALOG[String(source_id||"")];
+  return s ? s.title : "Fonte non indicata";
+}
+
+function shortSourceTag(source_id){
+  switch(String(source_id||"")){
+    case "CAST_UDL": return "CAST";
+    case "IES_WWC_PG": return "WWC/IES";
+    case "EEF_TOOLKIT": return "EEF";
+    case "NCAEP_2020": return "NCAEP";
+    case "PBIS_CENTER": return "PBIS";
+    case "MI_DI_182_2020": return "MIM";
+    case "MS_LG_CERT_PF_2022": return "Min.Salute";
+    case "WHO_ICF": return "WHO";
+    case "PEI_PLANNER_HEURISTICS": return "App";
+    default: return "Fonte";
+  }
+}
+
+function normalizeMethodsCatalog(){
+  // Garantisce che ogni record abbia provenance (minimo).
+  for(const it of METHODS_CATALOG){
+    if(!it) continue;
+    if(!it.source_id) it.source_id = "PEI_PLANNER_HEURISTICS";
+    if(!it.evidence_level) it.evidence_level = (it.source_id === "PEI_PLANNER_HEURISTICS" ? "consenso_esperti" : "—");
+    if(!it.applicability) it.applicability = "";
+    if(!it.conditions) it.conditions = "";
+    if(!it.targets) it.targets = [];
+  }
+}
+
+function buildSourcesUsed(s = state){
+  const used = new Map();
+
+  // Fondative (sempre)
+  ["MI_DI_182_2020", "MS_LG_CERT_PF_2022", "WHO_ICF"].forEach(id => {
+    const src = SOURCES_CATALOG[id];
+    if(src) used.set(id, { source_id:id, title:src.title, kind:src.kind, ref:src.ref, notes:src.notes });
+  });
+
+  // Metodologie selezionate
+  try{ ensurePlanState(s); }catch(e){}
+  const sel = (s && s.plan && s.plan.methods) ? s.plan.methods : {};
+  for(const it of METHODS_CATALOG){
+    if(sel && sel[it.key] && it.source_id && SOURCES_CATALOG[it.source_id]){
+      const src = SOURCES_CATALOG[it.source_id];
+      used.set(it.source_id, { source_id:it.source_id, title:src.title, kind:src.kind, ref:src.ref, notes:src.notes });
+    }
+  }
+
+  return Array.from(used.values());
+}
+
+/** =========================
  *  Metodologie didattiche (catalogo editabile)
  *  - key: id stabile
  *  - label: titolo breve
  *  - out: testo da riportare nell'output (5.2)
  *  - group: per menu a tendina
  * ========================= */
-const METHODS_CATALOG = [
-  { key:"udl", group:"Generali", label:"Universal Design for Learning (UDL)", out:"UDL: obiettivi chiari, più modalità di accesso (visivo/uditivo/pratico) e più modalità di risposta (orale, scritto, digitale, grafico)." },
+const DEFAULT_METHODS_CATALOG = [
+  { key:"udl", group:"Generali", label:"Universal Design for Learning (UDL)", out:"UDL: obiettivi chiari, più modalità di accesso (visivo/uditivo/pratico) e più modalità di risposta (orale, scritto, digitale, grafico)." , source_id:"CAST_UDL", evidence_level:"framework", applicability:"tutti gli ordini; progettazione di classe", conditions:"riduce barriere didattiche; richiede progettazione intenzionale" },
   { key:"taskAnalysis", group:"Generali", label:"Task Analysis (Analisi del compito)", out:"Task Analysis: scomposizione del compito in unità piccole e sequenziali; consegne brevi + esempi; acquisizione graduale delle autonomie." },
   { key:"scaffoldingGradualita", group:"Generali", label:"Scaffolding e gradualità", out:"Scaffolding e gradualità: dal guidato all’autonomo (prompting e fading), con supporti temporanei e feedback frequenti." },
   { key:"routineAgenda", group:"Generali", label:"Routine prevedibili e agenda", out:"Routine prevedibili: agenda (visiva/verbale), anticipazioni e chiusure (inizio/fine attività), tempi e regole stabili." },
-  { key:"istruzioneEsplicita", group:"Generali", label:"Istruzione esplicita (Direct Instruction)", out:"Istruzione esplicita: modellamento, pratica guidata, verifica di comprensione, esercitazione distribuita e feedback immediato." },
+  { key:"istruzioneEsplicita", group:"Generali", label:"Istruzione esplicita (Direct Instruction)", out:"Istruzione esplicita: modellamento, pratica guidata, verifica di comprensione, esercitazione distribuita e feedback immediato." , source_id:"IES_WWC_PG", evidence_level:"moderata", applicability:"primaria+secondaria; abilita accademiche/procedure", conditions:"modellamento + pratica guidata + feedback; monitoraggio frequente" },
   { key:"modelingThinkAloud", group:"Generali", label:"Modeling e Think-Aloud", out:"Modeling/Think-Aloud: l’insegnante mostra la procedura e verbalizza i passaggi per rendere visibile il ragionamento." },
-  { key:"metacognizione", group:"Studio e valutazione", label:"Metacognizione e autoregolazione", out:"Metacognizione: strategie di studio, pianificazione, monitoraggio, autovalutazione (checklist, rubriche, goal setting)." },
+  { key:"metacognizione", group:"Studio e valutazione", label:"Metacognizione e autoregolazione", out:"Metacognizione: strategie di studio, pianificazione, monitoraggio, autovalutazione (checklist, rubriche, goal setting)." , source_id:"EEF_TOOLKIT", evidence_level:"moderata", applicability:"tutti gli ordini", conditions:"insegnamento esplicito di strategie + autovalutazione" },
   { key:"spacedPractice", group:"Studio e valutazione", label:"Ripasso distribuito (Spaced Practice)", out:"Ripasso distribuito: richiami frequenti e brevi nel tempo, alternando ripresa e applicazione in contesti diversi." },
-  { key:"valutazioneFormativa", group:"Studio e valutazione", label:"Valutazione formativa", out:"Valutazione formativa: criteri trasparenti, rubriche, feedback sul processo, verifiche brevi e frequenti, possibilità di revisione." },
+  { key:"valutazioneFormativa", group:"Studio e valutazione", label:"Valutazione formativa", out:"Valutazione formativa: criteri trasparenti, rubriche, feedback sul processo, verifiche brevi e frequenti, possibilità di revisione." , source_id:"EEF_TOOLKIT", evidence_level:"moderata", applicability:"tutti gli ordini", conditions:"feedback tempestivo e criteri chiari; cicli brevi di miglioramento" },
   { key:"valutazioneBassaAnsia", group:"Studio e valutazione", label:"Valutazione a bassa ansia", out:"Valutazione a bassa ansia: prove brevi, programmazione anticipata, tempo aggiuntivo, alternative di risposta, pause e feedback rassicurante." },
 
-  { key:"peerTutoring", group:"Inclusione e cooperazione", label:"Peer Tutoring (Tutoring tra pari)", out:"Peer Tutoring: un alunno svolge il ruolo di tutor per un compagno; potenzia l’autostima e facilita la comunicazione con linguaggio semplificato." },
-  { key:"cooperativeLearning", group:"Inclusione e cooperazione", label:"Apprendimento Cooperativo (Cooperative Learning)", out:"Cooperative Learning: lavoro in piccoli gruppi con obiettivo comune; interdipendenza positiva, ruoli, competenze sociali e responsabilità condivisa." },
+  { key:"peerTutoring", group:"Inclusione e cooperazione", label:"Peer Tutoring (Tutoring tra pari)", out:"Peer Tutoring: un alunno svolge il ruolo di tutor per un compagno; potenzia l’autostima e facilita la comunicazione con linguaggio semplificato." , source_id:"EEF_TOOLKIT", evidence_level:"limitata", applicability:"primaria+secondaria", conditions:"abbinamenti curati; istruzioni al tutor; monitoraggio" },
+  { key:"cooperativeLearning", group:"Inclusione e cooperazione", label:"Apprendimento Cooperativo (Cooperative Learning)", out:"Cooperative Learning: lavoro in piccoli gruppi con obiettivo comune; interdipendenza positiva, ruoli, competenze sociali e responsabilità condivisa." , source_id:"EEF_TOOLKIT", evidence_level:"moderata", applicability:"primaria+secondaria", conditions:"ruoli chiari, interdipendenza positiva, compiti accessibili" },
   { key:"cooperativeRoles", group:"Inclusione e cooperazione", label:"Cooperative Learning con ruoli e accessibilità", out:"Cooperative Learning con ruoli: compiti differenziati, ruoli chiari e materiali accessibili per garantire partecipazione reale e pari dignità." },
   { key:"didatticaLaboratoriale", group:"Inclusione e cooperazione", label:"Didattica laboratoriale (learning by doing)", out:"Didattica laboratoriale: apprendimento attraverso esperienza diretta e manipolazione; riduce l’astrazione e sostiene motivazione e generalizzazione." },
 
@@ -203,12 +384,12 @@ const METHODS_CATALOG = [
 
   { key:"teacch", group:"Autismo e comunicazione", label:"TEACCH (approccio strutturato)", out:"TEACCH: organizzazione di spazio/tempo e uso di agende visive per prevedibilità e autonomia, particolarmente efficace nei profili autistici." },
   { key:"videoModeling", group:"Autismo e comunicazione", label:"Storytelling e Video Modeling", out:"Storytelling/Video Modeling: narrazioni o filmati che mostrano come svolgere azioni o gestire situazioni sociali, facilitando apprendimento per imitazione." },
-  { key:"socialStories", group:"Autismo e comunicazione", label:"Storie sociali e script", out:"Storie sociali/script: brevi testi o sequenze visive per preparare a contesti e regole sociali, riducendo ansia e migliorando prevedibilità." },
+  { key:"socialStories", group:"Autismo e comunicazione", label:"Storie sociali e script", out:"Storie sociali/script: brevi testi o sequenze visive per preparare a contesti e regole sociali, riducendo ansia e migliorando prevedibilità." , source_id:"NCAEP_2020", evidence_level:"moderata", applicability:"ASD (soprattutto primaria)", conditions:"personalizzazione, modeling e generalizzazione" },
 
   { key:"flippedClassroom", group:"Studio e valutazione", label:"Flipped Classroom (Classe capovolta)", out:"Flipped Classroom: contenuti a casa (video/materiali visivi) e tempo in classe per attività pratiche e personalizzate con supporto del docente." },
 
-  { key:"tokenEconomy", group:"Comportamento", label:"Token Economy (Economia a gettoni)", out:"Token Economy: rinforzo positivo tramite 'gettoni' e premi simbolici per comportamenti/obiettivi; utile nella gestione del comportamento." },
-  { key:"pbs", group:"Comportamento", label:"Supporto positivo al comportamento (PBS)", out:"PBS: prevenzione e insegnamento di comportamenti alternativi, rinforzo positivo, adattamento dell’ambiente e coerenza educativa." },
+  { key:"tokenEconomy", group:"Comportamento", label:"Token Economy (Economia a gettoni)", out:"Token Economy: rinforzo positivo tramite 'gettoni' e premi simbolici per comportamenti/obiettivi; utile nella gestione del comportamento." , source_id:"PBIS_CENTER", evidence_level:"consenso_esperti", applicability:"primaria+secondaria", conditions:"obiettivi osservabili; rinforzi chiari; fading" },
+  { key:"pbs", group:"Comportamento", label:"Supporto positivo al comportamento (PBS)", out:"PBS: prevenzione e insegnamento di comportamenti alternativi, rinforzo positivo, adattamento dell’ambiente e coerenza educativa." , source_id:"PBIS_CENTER", evidence_level:"framework", applicability:"tutti gli ordini", conditions:"prevenzione, insegnamento comportamenti alternativi, rinforzo positivo, coerenza" },
   { key:"abc", group:"Comportamento", label:"Analisi ABC del comportamento", out:"Analisi ABC: osservazione Antecedente–Comportamento–Conseguenza per individuare funzioni, prevenire trigger e progettare interventi efficaci." },
   { key:"selfMonitoring", group:"Comportamento", label:"Auto-monitoraggio e gestione dell’attenzione", out:"Auto-monitoraggio: timer, checklist on-task, pause programmate, obiettivi brevi e rinforzi; utile per attenzione e autoregolazione." },
   { key:"pacingPause", group:"Comportamento", label:"Pacing e pause programmate", out:"Pacing: alternanza lavoro–pausa, segmentazione dei tempi, riduzione carico e recupero; utile in affaticabilità o profili neuro/medici." },
@@ -230,12 +411,20 @@ const METHODS_CATALOG = [
 {group:"Sensoriali – Vista", key:"vistaTecnologieAssistive", label:"Tecnologie assistive e accessibilità digitale (screen reader, ingranditori, scorciatoie, formati accessibili)", out:"Uso didattico di tecnologie assistive (screen reader, ingranditori, OCR, barra braille) e produzione di materiali in formati accessibili (struttura, titoli, testo selezionabile, descrizioni alternative)."},
 ];
 
-// mappa rapida
-const METHODS_MAP = (() => {
+let METHODS_CATALOG = DEFAULT_METHODS_CATALOG;
+
+// mappa rapida (ricostruibile dopo import)
+let METHODS_MAP = new Map();
+
+function rebuildMethodsMap(){
   const m = new Map();
-  for(const it of METHODS_CATALOG) m.set(it.key, it);
-  return m;
-})();
+  for(const it of (METHODS_CATALOG || [])){
+    if(it && it.key) m.set(it.key, it);
+  }
+  METHODS_MAP = m;
+}
+
+rebuildMethodsMap();
 
 function methodOut(key){
   const it = METHODS_MAP.get(String(key));
@@ -360,7 +549,7 @@ function defaultCriterionForICF(code){
 /** =========================
  *  ICF – Obiettivi e fattori contestuali (schema in 4 aree)
  *  ========================= */
-const ICF_SECTIONS = [
+const DEFAULT_ICF_SECTIONS = [
   {
     id: "S1",
     title: "1 Socializzazione e Interazione",
@@ -503,6 +692,8 @@ const ICF_SECTIONS = [
   },
 ];
 
+let ICF_SECTIONS = DEFAULT_ICF_SECTIONS;
+
 function allIcfObjectives(){
   const out = [];
   for(const s of ICF_SECTIONS){ for(const it of s.objectives){ out.push(it); } }
@@ -520,31 +711,33 @@ function allIcfBarriers(){
 }
 
 
-const ICF_OBJECTIVES = allIcfObjectives();
-const ICF_FACILITATORS = allIcfFacilitators();
-const ICF_BARRIERS = allIcfBarriers();
+let ICF_OBJECTIVES = allIcfObjectives();
+let ICF_FACILITATORS = allIcfFacilitators();
+let ICF_BARRIERS = allIcfBarriers();
 
 // Mappa rapida: key obiettivo ICF -> area/sezione ICF (S1..S4) e ordine di priorità
-const ICF_OBJECTIVE_AREA_MAP = (() => {
-  const m = Object.create(null);
-  for(const sec of ICF_SECTIONS){
-    for(const it of (sec.objectives || [])){
-      m[it.key] = sec.id;
-    }
-  }
-  return m;
-})();
+let ICF_OBJECTIVE_AREA_MAP = Object.create(null);
+let ICF_OBJECTIVE_ORDER_MAP = Object.create(null);
 
-const ICF_OBJECTIVE_ORDER_MAP = (() => {
-  const m = Object.create(null);
+function rebuildIcfDerived(){
+  ICF_OBJECTIVES = allIcfObjectives();
+  ICF_FACILITATORS = allIcfFacilitators();
+  ICF_BARRIERS = allIcfBarriers();
+
+  const area = Object.create(null);
+  const order = Object.create(null);
   let i = 0;
   for(const sec of ICF_SECTIONS){
     for(const it of (sec.objectives || [])){
-      m[it.key] = i++;
+      area[it.key] = sec.id;
+      order[it.key] = i++;
     }
   }
-  return m;
-})();
+  ICF_OBJECTIVE_AREA_MAP = area;
+  ICF_OBJECTIVE_ORDER_MAP = order;
+}
+
+rebuildIcfDerived();
 
 const RESOURCES = [
   { key:"curricolari", label:"Docenti curricolari" },
@@ -559,15 +752,20 @@ const RESOURCES = [
 /** =========================
  *  ICD-10 (aree F, G, H) – codici diagnosi (menu a tendina, multi-selezione)
  *  ========================= */
-const ICD10_CODES = [{"code": "F70", "label": "Ritardo mentale lieve"}, {"code": "F71", "label": "Ritardo mentale di media gravità"}, {"code": "F72", "label": "Ritardo mentale grave"}, {"code": "F73", "label": "Ritardo mentale profondo"}, {"code": "F80", "label": "Disturbo evolutivo specifico dell'eloquio e del linguaggio"}, {"code": "F81", "label": "Disturbo evolutivo specifico delle abilità scolastiche (comprende Dislessia/DSA)"}, {"code": "F81.1", "label": "Disturbo specifico della scrittura"}, {"code": "F81.2", "label": "Disturbo specifico delle abilità aritmetiche"}, {"code": "F81.3", "label": "Disturbi misti delle abilità scolastiche"}, {"code": "F81.8", "label": "Altri disturbi delle abilità scolastiche"}, {"code": "F81.9", "label": "Disordine evolutivo delle abilità scolastiche non meglio specificato"}, {"code": "F82", "label": "Disturbo evolutivo specifico delle abilità motorie"}, {"code": "F83", "label": "Disturbi evolutivi specifici misti"}, {"code": "F84.0", "label": "Autismo infantile"}, {"code": "F84.1", "label": "Autismo atipico"}, {"code": "F84.2", "label": "Sindrome di Rett"}, {"code": "F84.3", "label": "Sindrome disintegrativa dell'infanzia di altro tipo"}, {"code": "F84.4", "label": "Sindrome iperattiva associata a ritardo mentale e movimenti stereotipati"}, {"code": "F84.5", "label": "Sindrome di Asperger"}, {"code": "F90.0", "label": "Disturbo dell'attività e dell'attenzione"}, {"code": "F90.1", "label": "Disturbo ipercinetico della condotta"}, {"code": "F90.8", "label": "Sindrome ipercinetiche di altro tipo"}, {"code": "F93", "label": "Disturbi della sfera emozionale con esordio caratteristico dell’infanzia"}, {"code": "F94", "label": "Disturbo del funzionamento sociale con esordio specifico nell’infanzia e nell’adolescenza"}, {"code": "F95", "label": "Disturbi a tipo tic"}, {"code": "F98", "label": "Altri disturbi comportamentali e della sfera emozionale con esordio abituale nell'infanzia e nell'adolescenza"}, {"code": "G80", "label": "Paralisi cerebrale infantile"}, {"code": "G81", "label": "Emiplegia"}, {"code": "G82", "label": "Paraplegia e tetraplegia (paraparesi e tetraparesi)"}, {"code": "G83", "label": "Altre sindromi paralitiche"}, {"code": "H54", "label": "Compromissione visiva, compresa cecità e ipovisione"}, {"code": "H90", "label": "Ipoacusia trasmissiva e neurosensoriale"}, {"code": "H91", "label": "Altre perdite uditive e perdite uditive non specificate"}];
+const DEFAULT_ICD10_CODES = [{"code": "F70", "label": "Ritardo mentale lieve"}, {"code": "F71", "label": "Ritardo mentale di media gravità"}, {"code": "F72", "label": "Ritardo mentale grave"}, {"code": "F73", "label": "Ritardo mentale profondo"}, {"code": "F80", "label": "Disturbo evolutivo specifico dell'eloquio e del linguaggio"}, {"code": "F81", "label": "Disturbo evolutivo specifico delle abilità scolastiche (comprende Dislessia/DSA)"}, {"code": "F81.1", "label": "Disturbo specifico della scrittura"}, {"code": "F81.2", "label": "Disturbo specifico delle abilità aritmetiche"}, {"code": "F81.3", "label": "Disturbi misti delle abilità scolastiche"}, {"code": "F81.8", "label": "Altri disturbi delle abilità scolastiche"}, {"code": "F81.9", "label": "Disordine evolutivo delle abilità scolastiche non meglio specificato"}, {"code": "F82", "label": "Disturbo evolutivo specifico delle abilità motorie"}, {"code": "F83", "label": "Disturbi evolutivi specifici misti"}, {"code": "F84.0", "label": "Autismo infantile"}, {"code": "F84.1", "label": "Autismo atipico"}, {"code": "F84.2", "label": "Sindrome di Rett"}, {"code": "F84.3", "label": "Sindrome disintegrativa dell'infanzia di altro tipo"}, {"code": "F84.4", "label": "Sindrome iperattiva associata a ritardo mentale e movimenti stereotipati"}, {"code": "F84.5", "label": "Sindrome di Asperger"}, {"code": "F90.0", "label": "Disturbo dell'attività e dell'attenzione"}, {"code": "F90.1", "label": "Disturbo ipercinetico della condotta"}, {"code": "F90.8", "label": "Sindrome ipercinetiche di altro tipo"}, {"code": "F93", "label": "Disturbi della sfera emozionale con esordio caratteristico dell’infanzia"}, {"code": "F94", "label": "Disturbo del funzionamento sociale con esordio specifico nell’infanzia e nell’adolescenza"}, {"code": "F95", "label": "Disturbi a tipo tic"}, {"code": "F98", "label": "Altri disturbi comportamentali e della sfera emozionale con esordio abituale nell'infanzia e nell'adolescenza"}, {"code": "G80", "label": "Paralisi cerebrale infantile"}, {"code": "G81", "label": "Emiplegia"}, {"code": "G82", "label": "Paraplegia e tetraplegia (paraparesi e tetraparesi)"}, {"code": "G83", "label": "Altre sindromi paralitiche"}, {"code": "H54", "label": "Compromissione visiva, compresa cecità e ipovisione"}, {"code": "H90", "label": "Ipoacusia trasmissiva e neurosensoriale"}, {"code": "H91", "label": "Altre perdite uditive e perdite uditive non specificate"}];
 
-const ICD10_MAP = (() => {
+let ICD10_CODES = DEFAULT_ICD10_CODES;
+let ICD10_MAP = new Map();
+
+function rebuildIcdMap(){
   const m = new Map();
-  for(const it of ICD10_CODES) {
+  for(const it of (ICD10_CODES || [])){
     if(it && it.code) m.set(String(it.code), String(it.label || ""));
   }
-  return m;
-})();
+  ICD10_MAP = m;
+}
+
+rebuildIcdMap();
 
 function icdTitle(code) {
   return ICD10_MAP.get(String(code)) || "";
@@ -1464,6 +1662,18 @@ function renderMethods(){
       pill2.className = "pill warn";
       pill2.textContent = "override";
       top.appendChild(pill2);
+    }
+
+    // Provenienza + livello evidenza (trasparenza)
+    if(it.source_id){
+      const pillS = document.createElement("span");
+      pillS.className = "pill";
+      const tag = shortSourceTag(it.source_id);
+      const lvl = it.evidence_level ? String(it.evidence_level) : "—";
+      pillS.textContent = `${tag} • ${lvl}`;
+      pillS.title = sourceLabel(it.source_id) + (it.conditions ? `
+Condizioni: ${it.conditions}` : "");
+      top.appendChild(pillS);
     }
 
     const desc = document.createElement("div");
@@ -3386,6 +3596,1043 @@ for(const k of Object.keys(toolDefaults)){
   return s;
 }
 
+
+
+
+// =========================
+// Modal: elenco completo fonti (link cliccabili)
+// =========================
+function renderAllSourcesModal(){
+  const body = document.getElementById('sourcesModalBody');
+  if(!body) return;
+  body.innerHTML = '';
+
+  const all = Object.keys(SOURCES_CATALOG || {}).map(id => ({ source_id:id, ...SOURCES_CATALOG[id] }));
+  if(!all.length){
+    body.textContent = 'Nessuna fonte disponibile.';
+    return;
+  }
+
+  const groups = {};
+  for(const s of all){
+    const k = s.kind || 'altro';
+    (groups[k] = groups[k] || []).push(s);
+  }
+  const order = ['normativa','linee_guida_istituzionali','classificazione','framework','practice_guides','evidence_synthesis','systematic_review','expert_consensus','altro'];
+
+  const intro = document.createElement('div');
+  intro.className = 'modalHint';
+  intro.textContent = 'Elenco completo delle fonti dichiarate nell\'app. I link aprono in una nuova scheda (quando disponibili).';
+  body.appendChild(intro);
+
+  for(const kind of order){
+    if(!groups[kind]) continue;
+    const h = document.createElement('div');
+    h.className = 'modalGroupTitle';
+    h.textContent = kind.replace(/_/g,' ');
+    body.appendChild(h);
+
+    const ul = document.createElement('ul');
+    ul.className = 'modalList';
+
+    // ordinamento alfabetico per titolo
+    groups[kind].sort((a,b) => String(a.title||'').localeCompare(String(b.title||''), 'it'));
+
+    for(const src of groups[kind]){
+      const li = document.createElement('li');
+      const hasLink = !!(src.ref && src.ref !== 'internal');
+      if(hasLink){
+        const a = document.createElement('a');
+        a.textContent = src.title || src.source_id;
+        a.href = src.ref;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        li.appendChild(a);
+      } else {
+        const span = document.createElement('span');
+        span.textContent = (src.title || src.source_id) + ' (interno)';
+        li.appendChild(span);
+      }
+
+      if(src.notes){
+        const small = document.createElement('div');
+        small.className = 'modalHint';
+        small.textContent = src.notes;
+        li.appendChild(small);
+      }
+      ul.appendChild(li);
+    }
+    body.appendChild(ul);
+  }
+}
+
+function openSourcesModal(){
+  const overlay = document.getElementById('sourcesModal');
+  if(!overlay) return;
+  renderAllSourcesModal();
+  overlay.classList.add('open');
+  overlay.setAttribute('aria-hidden','false');
+  const closeBtn = document.getElementById('btnSourcesClose');
+  if(closeBtn) closeBtn.focus();
+}
+
+function closeSourcesModal(){
+  const overlay = document.getElementById('sourcesModal');
+  if(!overlay) return;
+  overlay.classList.remove('open');
+  overlay.setAttribute('aria-hidden','true');
+}
+
+function initSourcesModal(){
+  const btn = document.getElementById('btnSourcesModal');
+  const overlay = document.getElementById('sourcesModal');
+  const closeBtn = document.getElementById('btnSourcesClose');
+  if(btn) btn.addEventListener('click', openSourcesModal);
+  if(closeBtn) closeBtn.addEventListener('click', closeSourcesModal);
+  if(overlay){
+    overlay.addEventListener('click', (e) => {
+      // click fuori dal pannello chiude
+      if(e.target === overlay) closeSourcesModal();
+    });
+  }
+  document.addEventListener('keydown', (e) => {
+    if(e.key === 'Escape'){
+      const ov = document.getElementById('sourcesModal');
+      if(ov && ov.classList.contains('open')) closeSourcesModal();
+    }
+  });
+}
+
+/* =========================
+ *  Aggiornamenti database (ICD/ICF/Metodi/Semantica)
+ *  Import/Export: formato Excel XML 2003 (multi-foglio).
+ *  I dati aggiornati vengono salvati in IndexedDB e recuperati all'avvio.
+ * ========================= */
+
+function _xmlEsc(s){
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function _splitSemi(s){
+  return String(s || "")
+    .split(/\s*;\s*/)
+    .map(x => x.trim())
+    .filter(Boolean);
+}
+
+function _joinSemi(arr){
+  return Array.isArray(arr) ? arr.filter(Boolean).join(";") : "";
+}
+
+function _setDbStatus(msg, isErr=false){
+  const el = document.getElementById("dbStatus");
+  if(!el) return;
+  el.textContent = msg || "";
+  el.style.color = isErr ? "#b00020" : "";
+}
+
+function _downloadText(filename, text, mime="application/xml"){
+  const blob = new Blob([text], { type:mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+function _workbookToSpreadsheetML(sheets, meta={}){
+  const ns = {
+    xmlns: "urn:schemas-microsoft-com:office:spreadsheet",
+    o: "urn:schemas-microsoft-com:office:office",
+    x: "urn:schemas-microsoft-com:office:excel",
+    ss: "urn:schemas-microsoft-com:office:spreadsheet",
+    html: "http://www.w3.org/TR/REC-html40"
+  };
+
+  const sheetXml = (name, rows) => {
+    const safeName = String(name || "Sheet").slice(0, 31);
+    const rowXml = (row) => {
+      const cells = (row || []).map(v => {
+        const t = (v === null || v === undefined) ? "" : String(v);
+        return `<Cell><Data ss:Type="String">${_xmlEsc(t)}</Data></Cell>`;
+      }).join("");
+      return `<Row>${cells}</Row>`;
+    };
+    return `\n<Worksheet ss:Name="${_xmlEsc(safeName)}"><Table>${(rows||[]).map(rowXml).join("")}</Table></Worksheet>`;
+  };
+
+  const metaRows = [
+    ["key","value"],
+    ["exported_at", new Date().toISOString()],
+    ["app", "PEI Planner"],
+    ["db_name", DB_NAME],
+    ...Object.entries(meta || {}).map(([k,v]) => [String(k), String(v)])
+  ];
+
+  const all = [{ name:"META", rows:metaRows }, ...sheets];
+
+  return `<?xml version="1.0"?>\n`+
+    `<?mso-application progid="Excel.Sheet"?>\n`+
+    `<Workbook xmlns="${ns.xmlns}" xmlns:o="${ns.o}" xmlns:x="${ns.x}" xmlns:ss="${ns.ss}" xmlns:html="${ns.html}">`+
+    `${all.map(s => sheetXml(s.name, s.rows)).join("")}`+
+    `\n</Workbook>`;
+}
+
+function _parseSpreadsheetML(xmlText){
+  const doc = new DOMParser().parseFromString(xmlText, "application/xml");
+  const err = doc.getElementsByTagName("parsererror")[0];
+  if(err) throw new Error("File non valido (XML)." );
+  const wsNodes = Array.from(doc.getElementsByTagNameNS("*","Worksheet"));
+  const out = new Map();
+
+  for(const ws of wsNodes){
+    const name = ws.getAttribute("ss:Name") || ws.getAttribute("Name") || "";
+    const table = ws.getElementsByTagNameNS("*","Table")[0];
+    const rows = [];
+    if(table){
+      const rowNodes = Array.from(table.getElementsByTagNameNS("*","Row"));
+      for(const r of rowNodes){
+        const cells = Array.from(r.getElementsByTagNameNS("*","Cell"));
+        const vals = cells.map(c => {
+          const d = c.getElementsByTagNameNS("*","Data")[0];
+          return d ? (d.textContent || "") : "";
+        });
+        rows.push(vals);
+      }
+    }
+    out.set(String(name || ""), rows);
+  }
+  return out;
+}
+
+function _rowsToObjects(rows){
+  const hdr = (rows && rows[0]) ? rows[0].map(h => String(h||"").trim()) : [];
+  const items = [];
+  for(let i=1;i<(rows||[]).length;i++){
+    const r = rows[i] || [];
+    if(r.every(v => !String(v||"").trim())) continue;
+    const obj = {};
+    for(let j=0;j<hdr.length;j++){
+      const k = hdr[j];
+      if(!k) continue;
+      obj[k] = String(r[j] ?? "").trim();
+    }
+    items.push(obj);
+  }
+  return items;
+}
+
+function _icfSectionsToRows(){
+  const rows = [["section_id","section_title","section_subtitle","type","key","code","label"]];
+  for(const sec of (ICF_SECTIONS || [])){
+    const sid = sec.id || "";
+    const st = sec.title || "";
+    const ss = sec.subtitle || "";
+    for(const it of (sec.objectives || [])) rows.push([sid,st,ss,"objective",it.key||"",it.code||"",it.label||""]);
+    for(const it of (sec.facilitators || [])) rows.push([sid,st,ss,"facilitator",it.key||"",it.code||"",it.label||""]);
+    for(const it of (sec.barriers || [])) rows.push([sid,st,ss,"barrier",it.key||"",it.code||"",it.label||""]);
+  }
+  return rows;
+}
+
+function _semanticToRows(){
+  const rows = [["key","synonyms","b_codes","s_codes","d_codes","e_codes"]];
+  for(const c of (ICF_SEMANTIC_CONCEPTS || [])){
+    const codes = c.codes || {};
+    rows.push([
+      c.key || "",
+      _joinSemi(c.synonyms || []),
+      _joinSemi(codes.b || []),
+      _joinSemi(codes.s || []),
+      _joinSemi(codes.d || []),
+      _joinSemi(codes.e || [])
+    ]);
+  }
+  return rows;
+}
+
+function _icdToRows(){
+  const rows = [["code","label"]];
+  for(const it of (ICD10_CODES || [])) rows.push([it.code||"", it.label||""]);
+  return rows;
+}
+
+function _methodsToRows(){
+  const rows = [["key","group","label","out","source_id","evidence_level","applicability","conditions","targets"]];
+  for(const it of (METHODS_CATALOG || [])){
+    rows.push([
+      it.key||"", it.group||"", it.label||"", it.out||"",
+      it.source_id||"", it.evidence_level||"", it.applicability||"", it.conditions||"",
+      Array.isArray(it.targets) ? it.targets.join(";") : (it.targets || "")
+    ]);
+  }
+  return rows;
+}
+
+async function exportDatabaseToExcel(){
+  const sheets = [
+    { name:"ICD", rows:_icdToRows() },
+    { name:"ICF", rows:_icfSectionsToRows() },
+    { name:"METHODS", rows:_methodsToRows() },
+    { name:"ICF_SEMANTIC", rows:_semanticToRows() },
+  ];
+  const meta = await idbGet("meta") || {};
+  const xml = _workbookToSpreadsheetML(sheets, meta);
+  const fn = `pei_db_export_${new Date().toISOString().slice(0,10)}.xml`;
+  _downloadText(fn, xml, "application/xml");
+  _setDbStatus(`Esportazione completata: ${fn}`);
+}
+
+function _objectsToIcfSections(items){
+  const byId = new Map();
+  for(const r of (items || [])){
+    const sid = String(r.section_id || "").trim();
+    if(!sid) continue;
+    if(!byId.has(sid)){
+      byId.set(sid, { id:sid, title:r.section_title||"", subtitle:r.section_subtitle||"", objectives:[], facilitators:[], barriers:[] });
+    }
+    const sec = byId.get(sid);
+    if(!sec.title && r.section_title) sec.title = r.section_title;
+    if(!sec.subtitle && r.section_subtitle) sec.subtitle = r.section_subtitle;
+    const type = String(r.type||"").trim();
+    const it = { key:r.key||"", code:r.code||"", label:r.label||"" };
+    if(type === "objective") sec.objectives.push(it);
+    else if(type === "facilitator") sec.facilitators.push(it);
+    else if(type === "barrier") sec.barriers.push(it);
+  }
+  // Ordina sezioni per id (S1..)
+  return Array.from(byId.values()).sort((a,b)=>String(a.id).localeCompare(String(b.id),"it"));
+}
+
+function _objectsToMethods(items){
+  const out = [];
+  for(const r of (items || [])){
+    if(!r.key) continue;
+    out.push({
+      key:r.key,
+      group:r.group||"",
+      label:r.label||"",
+      out:r.out||"",
+      source_id:r.source_id||"PEI_PLANNER_HEURISTICS",
+      evidence_level:r.evidence_level||"",
+      applicability:r.applicability||"",
+      conditions:r.conditions||"",
+      targets:_splitSemi(r.targets||"")
+    });
+  }
+  return out;
+}
+
+function _objectsToIcd(items){
+  const out = [];
+  for(const r of (items || [])){
+    const code = String(r.code||"").trim();
+    if(!code) continue;
+    out.push({ code, label:r.label||"" });
+  }
+  return out;
+}
+
+function _objectsToSemantic(items){
+  const out = [];
+  for(const r of (items || [])){
+    const key = String(r.key||"").trim();
+    if(!key) continue;
+    out.push({
+      key,
+      synonyms:_splitSemi(r.synonyms||""),
+      codes:{
+        b:_splitSemi(r.b_codes||""),
+        s:_splitSemi(r.s_codes||""),
+        d:_splitSemi(r.d_codes||""),
+        e:_splitSemi(r.e_codes||"")
+      }
+    });
+  }
+  return out;
+}
+
+async function loadCatalogsFromIndexedDB(){
+  const meta = await idbGet("meta");
+  const icd = await idbGet("icd");
+  const icf = await idbGet("icf");
+  const methods = await idbGet("methods");
+  const semantic = await idbGet("icf_semantic");
+
+  let changed = false;
+  if(Array.isArray(icd)){
+    ICD10_CODES = icd;
+    rebuildIcdMap();
+    changed = true;
+  }
+  if(Array.isArray(icf)){
+    ICF_SECTIONS = icf;
+    rebuildIcfDerived();
+    changed = true;
+  }
+  if(Array.isArray(methods)){
+    METHODS_CATALOG = methods;
+    rebuildMethodsMap();
+    changed = true;
+  }
+  if(Array.isArray(semantic)){
+    ICF_SEMANTIC_CONCEPTS = semantic;
+    changed = true;
+  }
+
+  if(changed) try{ normalizeMethodsCatalog(); }catch(e){}
+
+  if(meta && typeof meta === "object"){
+    const parts = [];
+    if(meta.icd_version) parts.push(`ICD: ${meta.icd_version}`);
+    if(meta.icf_version) parts.push(`ICF: ${meta.icf_version}`);
+    if(meta.methods_version) parts.push(`Metodi: ${meta.methods_version}`);
+    if(meta.semantic_version) parts.push(`Semantica: ${meta.semantic_version}`);
+    const s = parts.length ? parts.join(" | ") : "Database locale attivo.";
+    _setDbStatus(s);
+  }
+}
+
+async function resetCatalogsToDefault(){
+  await idbDel("icd");
+  await idbDel("icf");
+  await idbDel("methods");
+  await idbDel("icf_semantic");
+  await idbDel("meta");
+
+  ICD10_CODES = DEFAULT_ICD10_CODES;
+  rebuildIcdMap();
+  ICF_SECTIONS = DEFAULT_ICF_SECTIONS;
+  rebuildIcfDerived();
+  METHODS_CATALOG = DEFAULT_METHODS_CATALOG;
+  rebuildMethodsMap();
+  ICF_SEMANTIC_CONCEPTS = DEFAULT_ICF_SEMANTIC_CONCEPTS;
+
+  try{ normalizeMethodsCatalog(); }catch(e){}
+  _setDbStatus("Ripristinati i cataloghi predefiniti.");
+}
+
+/* =========================
+ *  Import database (tutti i fogli) + gestione CRUD (modal)
+ *  - Importa: sostituisce i dataset trovati nel file
+ *  - CRUD: aggiunge/modifica/elimina record e salva in IndexedDB
+ * ========================= */
+
+async function importDatabaseFromSpreadsheetML(xmlText, filename){
+  const sheets = _parseSpreadsheetML(xmlText);
+  const meta = (await idbGet("meta")) || {};
+  const ver = new Date().toISOString().slice(0,10);
+  let did = false;
+
+  const _maybe = (name) => sheets.get(name) || sheets.get(name.toUpperCase()) || sheets.get(name.toLowerCase());
+
+  const rowsICD = _maybe("ICD");
+  if(rowsICD){
+    const items = _rowsToObjects(rowsICD);
+    ICD10_CODES = _objectsToIcd(items);
+    rebuildIcdMap();
+    await idbSet("icd", ICD10_CODES);
+    meta.icd_version = ver;
+    did = true;
+  }
+
+  const rowsICF = _maybe("ICF");
+  if(rowsICF){
+    const items = _rowsToObjects(rowsICF);
+    ICF_SECTIONS = _objectsToIcfSections(items);
+    rebuildIcfDerived();
+    await idbSet("icf", ICF_SECTIONS);
+    meta.icf_version = ver;
+    did = true;
+  }
+
+  const rowsM = _maybe("METHODS");
+  if(rowsM){
+    const items = _rowsToObjects(rowsM);
+    METHODS_CATALOG = _objectsToMethods(items);
+    rebuildMethodsMap();
+    try{ normalizeMethodsCatalog(); }catch(e){}
+    await idbSet("methods", METHODS_CATALOG);
+    meta.methods_version = ver;
+    did = true;
+  }
+
+  const rowsS = _maybe("ICF_SEMANTIC");
+  if(rowsS){
+    const items = _rowsToObjects(rowsS);
+    ICF_SEMANTIC_CONCEPTS = _objectsToSemantic(items);
+    await idbSet("icf_semantic", ICF_SEMANTIC_CONCEPTS);
+    meta.semantic_version = ver;
+    did = true;
+  }
+
+  if(!did){
+    throw new Error("Nessun foglio riconosciuto. Attesi: ICD, ICF, METHODS, ICF_SEMANTIC.");
+  }
+
+  meta.last_import_file = filename || "";
+  meta.last_import_at = new Date().toISOString();
+  await idbSet("meta", meta);
+
+  renderTable();
+  renderICF();
+  renderICD();
+  ensureDfpfState();
+  renderDiagICF();
+  renderOutput();
+
+  _setDbStatus(`Import completato${filename ? " da " + filename : ""}.`);
+}
+
+// ===== Modal CRUD =====
+let __dbModalKind = null;
+let __dbModalEditingId = null; // string
+
+function initDbModal(){
+  const overlay = document.getElementById("dbModal");
+  const btnClose = document.getElementById("btnDbModalClose");
+  if(!overlay) return;
+
+  const close = () => {
+    overlay.classList.remove("open");
+    overlay.setAttribute("aria-hidden","true");
+    __dbModalKind = null;
+    __dbModalEditingId = null;
+  };
+
+  if(btnClose) btnClose.addEventListener("click", close);
+  overlay.addEventListener("click", (e)=>{ if(e.target === overlay) close(); });
+  document.addEventListener("keydown", (e)=>{ if(e.key === "Escape" && overlay.classList.contains("open")) close(); });
+
+  window.__closeDbModal = close;
+}
+
+function openDbManager(kind){
+  __dbModalKind = kind;
+  __dbModalEditingId = null;
+
+  const overlay = document.getElementById("dbModal");
+  const title = document.getElementById("dbModalTitle");
+  const body = document.getElementById("dbModalBody");
+  if(!overlay || !body) return;
+
+  const titles = {
+    icd: "Gestione ICD (catalogo)",
+    icf: "Gestione ICF (obiettivi/facilitatori/barriere)",
+    methods: "Gestione metodologie/strategie",
+    semantic: "Gestione ricerca semantica ICF"
+  };
+  if(title) title.textContent = titles[kind] || "Gestione database";
+
+  body.innerHTML = "";
+  body.appendChild(_buildDbManagerUI(kind));
+
+  overlay.classList.add("open");
+  overlay.setAttribute("aria-hidden","false");
+}
+
+function _dbNormalizeId(s){
+  return String(s||"").trim();
+}
+
+function _buildDbManagerUI(kind){
+  const wrap = document.createElement("div");
+
+  const hint = document.createElement("div");
+  hint.className = "modalHint";
+  hint.textContent = "Le modifiche vengono salvate nel database locale (IndexedDB). Usa 'Esporta database' per trasferire su altri PC.";
+  wrap.appendChild(hint);
+
+  // Top controls
+  const top = document.createElement("div");
+  top.className = "dbTop";
+
+  const search = document.createElement("input");
+  search.type = "search";
+  search.placeholder = "Cerca…";
+  search.className = "dbSearch";
+  top.appendChild(search);
+
+  const btnNew = document.createElement("button");
+  btnNew.className = "btn";
+  btnNew.type = "button";
+  btnNew.textContent = "＋ Nuovo";
+  top.appendChild(btnNew);
+
+  const btnSave = document.createElement("button");
+  btnSave.className = "btn primary";
+  btnSave.type = "button";
+  btnSave.textContent = "💾 Salva";
+  top.appendChild(btnSave);
+
+  const btnDelete = document.createElement("button");
+  btnDelete.className = "btn";
+  btnDelete.type = "button";
+  btnDelete.textContent = "🗑️ Elimina";
+  top.appendChild(btnDelete);
+
+  const btnClose = document.createElement("button");
+  btnClose.className = "btn";
+  btnClose.type = "button";
+  btnClose.textContent = "Chiudi";
+  btnClose.addEventListener("click", ()=> window.__closeDbModal && window.__closeDbModal());
+  top.appendChild(btnClose);
+
+  wrap.appendChild(top);
+
+  // Form + table
+  const form = document.createElement("div");
+  form.className = "dbForm";
+  const table = document.createElement("div");
+  table.className = "dbTableWrap";
+
+  wrap.appendChild(form);
+  wrap.appendChild(table);
+
+  const state = { filter:"" };
+
+  const ctx = _dbKindContext(kind);
+  const formEls = {};
+
+  function renderForm(row){
+    form.innerHTML = "";
+    const grid = document.createElement("div");
+    grid.className = "dbFormGrid";
+
+    for(const f of ctx.fields){
+      const lab = document.createElement("label");
+      lab.className = "dbField";
+      const span = document.createElement("span");
+      span.textContent = f.label;
+      lab.appendChild(span);
+
+      let inp;
+      if(f.type === "select"){
+        inp = document.createElement("select");
+        for(const opt of f.options){
+          const o = document.createElement("option");
+          o.value = opt.value;
+          o.textContent = opt.label;
+          inp.appendChild(o);
+        }
+      } else if(f.type === "textarea"){
+        inp = document.createElement("textarea");
+        inp.rows = (f.rows || 3);
+      } else {
+        inp = document.createElement("input");
+        inp.type = f.type || "text";
+      }
+      inp.className = "dbInput";
+      inp.placeholder = f.placeholder || "";
+      inp.value = row ? (row[f.key] ?? "") : (f.default ?? "");
+      lab.appendChild(inp);
+      grid.appendChild(lab);
+      formEls[f.key] = inp;
+    }
+
+    form.appendChild(grid);
+    const note = document.createElement("div");
+    note.className = "modalHint";
+    note.textContent = __dbModalEditingId ? `Modifica record: ${__dbModalEditingId}` : "Nuovo record";
+    form.appendChild(note);
+  }
+
+  function getAllRows(){
+    return ctx.getRows();
+  }
+
+  function renderTable(){
+    const rows = getAllRows();
+    const f = _icfNorm(state.filter);
+    const filtered = !f ? rows : rows.filter(r => _icfNorm(ctx.searchText(r)).includes(f));
+
+    table.innerHTML = "";
+    const t = document.createElement("table");
+    t.className = "dbTable";
+
+    const thead = document.createElement("thead");
+    const trh = document.createElement("tr");
+    for(const c of ctx.columns){
+      const th = document.createElement("th");
+      th.textContent = c.label;
+      trh.appendChild(th);
+    }
+    thead.appendChild(trh);
+    t.appendChild(thead);
+
+    const tbody = document.createElement("tbody");
+    for(const r of filtered){
+      const tr = document.createElement("tr");
+      if(ctx.idOf(r) === __dbModalEditingId) tr.classList.add("active");
+      tr.addEventListener("click", ()=>{
+        __dbModalEditingId = ctx.idOf(r);
+        renderForm(ctx.toFormRow(r));
+        renderTable();
+      });
+      for(const c of ctx.columns){
+        const td = document.createElement("td");
+        td.textContent = String(r[c.key] ?? "");
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+    t.appendChild(tbody);
+    table.appendChild(t);
+
+    const foot = document.createElement("div");
+    foot.className = "modalHint";
+    foot.textContent = `${filtered.length} record`;
+    table.appendChild(foot);
+  }
+
+  async function persist(){
+    // build row from form
+    const row = {};
+    for(const f of ctx.fields){
+      row[f.key] = formEls[f.key] ? formEls[f.key].value : "";
+    }
+
+    const id = _dbNormalizeId(ctx.idFromForm(row));
+    if(!id){ toast("Campo chiave mancante."); return; }
+
+    const res = ctx.upsertFromForm(row, __dbModalEditingId);
+    __dbModalEditingId = res;
+
+    await ctx.save();
+
+    // refresh overall UI
+    renderTable();
+    renderICF();
+    renderICD();
+    ensureDfpfState();
+    renderDiagICF();
+    renderOutput();
+
+    toast("Salvato nel database locale ✅");
+  }
+
+  async function remove(){
+    if(!__dbModalEditingId){ toast("Seleziona un record da eliminare."); return; }
+    if(!confirm("Eliminare il record selezionato?")) return;
+    ctx.removeById(__dbModalEditingId);
+    __dbModalEditingId = null;
+    await ctx.save();
+
+    renderForm(null);
+    renderTable();
+    renderICF();
+    renderICD();
+    ensureDfpfState();
+    renderDiagICF();
+    renderOutput();
+
+    toast("Eliminato.");
+  }
+
+  search.addEventListener("input", ()=>{ state.filter = search.value || ""; renderTable(); });
+  btnNew.addEventListener("click", ()=>{ __dbModalEditingId = null; renderForm(null); renderTable(); });
+  btnSave.addEventListener("click", ()=>{ persist(); });
+  btnDelete.addEventListener("click", ()=>{ remove(); });
+
+  renderForm(null);
+  renderTable();
+
+  return wrap;
+}
+
+function _dbKindContext(kind){
+  if(kind === "icd") return _dbCtxICD();
+  if(kind === "icf") return _dbCtxICF();
+  if(kind === "methods") return _dbCtxMethods();
+  return _dbCtxSemantic();
+}
+
+function _dbUpdateMetaField(field){
+  const ver = new Date().toISOString().slice(0,10);
+  return idbGet("meta").then(m => m||{}).then(async meta => {
+    meta[field] = ver;
+    meta.last_edit_at = new Date().toISOString();
+    await idbSet("meta", meta);
+    const parts = [];
+    if(meta.icd_version) parts.push(`ICD: ${meta.icd_version}`);
+    if(meta.icf_version) parts.push(`ICF: ${meta.icf_version}`);
+    if(meta.methods_version) parts.push(`Metodi: ${meta.methods_version}`);
+    if(meta.semantic_version) parts.push(`Semantica: ${meta.semantic_version}`);
+    _setDbStatus(parts.join(" | ") || "Database locale attivo.");
+  });
+}
+
+function _dbCtxICD(){
+  return {
+    columns:[{key:"code",label:"Codice"},{key:"label",label:"Descrizione"}],
+    fields:[
+      {key:"code",label:"Codice ICD",placeholder:"es. F84.0"},
+      {key:"label",label:"Descrizione"}
+    ],
+    getRows: ()=> (ICD10_CODES || []).slice().sort((a,b)=>String(a.code).localeCompare(String(b.code))),
+    searchText: (r)=> `${r.code} ${r.label}`,
+    idOf: (r)=> String(r.code||""),
+    idFromForm: (row)=> row.code,
+    toFormRow: (r)=> ({code:r.code||"", label:r.label||""}),
+    upsertFromForm: (row, editingId)=>{
+      const code = String(row.code||"").trim();
+      const label = String(row.label||"").trim();
+      if(!code) return null;
+      let arr = ICD10_CODES || [];
+      const idx = arr.findIndex(x => String(x.code)=== (editingId||code));
+      const rec = { code, label };
+      if(idx>=0) arr[idx]=rec; else arr.push(rec);
+      ICD10_CODES = arr;
+      rebuildIcdMap();
+      return code;
+    },
+    removeById: (id)=>{ ICD10_CODES = (ICD10_CODES||[]).filter(x=>String(x.code)!==String(id)); rebuildIcdMap(); },
+    save: async ()=>{ await idbSet("icd", ICD10_CODES); await _dbUpdateMetaField("icd_version"); }
+  };
+}
+
+function _dbFlattenICF(){
+  const rows=[];
+  for(const sec of (ICF_SECTIONS||[])){
+    for(const kind of ["objectives","facilitators","barriers"]){
+      for(const it of (sec[kind]||[])){
+        rows.push({
+          section_id: sec.id,
+          section_title: sec.title,
+          kind,
+          key: it.key,
+          code: it.code,
+          label: it.label
+        });
+      }
+    }
+  }
+  return rows;
+}
+
+function _dbApplyICFFlat(rows){
+  // rebuild ICF_SECTIONS from existing structure, replacing items by matching ids
+  const bySec = new Map();
+  for(const r of rows){
+    const sid = r.section_id;
+    if(!bySec.has(sid)) bySec.set(sid, {objectives:[], facilitators:[], barriers:[]});
+    const bucket = bySec.get(sid);
+    if(bucket[r.kind]) bucket[r.kind].push({ key:r.key, code:r.code, label:r.label });
+  }
+  for(const sec of (ICF_SECTIONS||[])){
+    const bucket = bySec.get(sec.id);
+    if(bucket){
+      sec.objectives = bucket.objectives;
+      sec.facilitators = bucket.facilitators;
+      sec.barriers = bucket.barriers;
+    }
+  }
+  rebuildIcfDerived();
+}
+
+function _dbCtxICF(){
+  const secOpts = (ICF_SECTIONS||[]).map(s=>({value:s.id,label:`${s.id} – ${s.title}`}));
+  const kindOpts = [
+    {value:"objectives",label:"Obiettivi"},
+    {value:"facilitators",label:"Facilitatori"},
+    {value:"barriers",label:"Barriere"}
+  ];
+  return {
+    columns:[{key:"section_id",label:"Sezione"},{key:"kind",label:"Tipo"},{key:"code",label:"Codice"},{key:"label",label:"Descrizione"}],
+    fields:[
+      {key:"section_id",label:"Sezione",type:"select",options:secOpts},
+      {key:"kind",label:"Tipo",type:"select",options:kindOpts,default:"objectives"},
+      {key:"key",label:"Key interna",placeholder:"es. b140 (puo coincidere col codice)"},
+      {key:"code",label:"Codice ICF",placeholder:"es. b140 / d166 / e150"},
+      {key:"label",label:"Descrizione"}
+    ],
+    getRows: ()=> _dbFlattenICF().sort((a,b)=>(a.section_id+a.kind+a.code).localeCompare(b.section_id+b.kind+b.code)),
+    searchText: (r)=> `${r.section_id} ${r.kind} ${r.code} ${r.label}`,
+    idOf: (r)=> `${r.section_id}::${r.kind}::${r.key||r.code}`,
+    idFromForm: (row)=> `${row.section_id}::${row.kind}::${row.key||row.code}`,
+    toFormRow: (r)=> ({section_id:r.section_id, kind:r.kind, key:r.key||"", code:r.code||"", label:r.label||""}),
+    upsertFromForm: (row, editingId)=>{
+      const section_id = String(row.section_id||"").trim();
+      const kind = String(row.kind||"").trim();
+      const code = String(row.code||"").trim();
+      const key = String(row.key||code||"").trim();
+      const label = String(row.label||"").trim();
+      if(!section_id || !kind || !code) return null;
+
+      const rows = _dbFlattenICF();
+      const id = `${section_id}::${kind}::${key}`;
+      const targetId = editingId || id;
+      const idx = rows.findIndex(r => `${r.section_id}::${r.kind}::${r.key||r.code}` === targetId);
+      const rec = { section_id, section_title:"", kind, key, code, label };
+      if(idx>=0) rows[idx]=rec; else rows.push(rec);
+      _dbApplyICFFlat(rows);
+      return id;
+    },
+    removeById: (id)=>{
+      const rows = _dbFlattenICF().filter(r => `${r.section_id}::${r.kind}::${r.key||r.code}` !== String(id));
+      _dbApplyICFFlat(rows);
+    },
+    save: async ()=>{ await idbSet("icf", ICF_SECTIONS); await _dbUpdateMetaField("icf_version"); }
+  };
+}
+
+function _dbCtxMethods(){
+  return {
+    columns:[{key:"key",label:"Key"},{key:"group",label:"Gruppo"},{key:"label",label:"Titolo"},{key:"source_id",label:"Fonte"}],
+    fields:[
+      {key:"key",label:"Key (univoca)",placeholder:"es. istruzioneEsplicita"},
+      {key:"group",label:"Gruppo",placeholder:"Generali / Comportamento / ..."},
+      {key:"label",label:"Titolo"},
+      {key:"out",label:"Testo (output)",type:"textarea",rows:5},
+      {key:"source_id",label:"Source ID",placeholder:"es. IES_WWC_PG"},
+      {key:"evidence_level",label:"Livello evidenza",placeholder:"forte / moderata / ..."},
+      {key:"applicability",label:"Applicabilita"},
+      {key:"conditions",label:"Condizioni"},
+      {key:"targets",label:"Targets ICF (;)"}
+    ],
+    getRows: ()=> (METHODS_CATALOG||[]).slice().sort((a,b)=>String(a.key).localeCompare(String(b.key))),
+    searchText: (r)=> `${r.key} ${r.group} ${r.label} ${r.out}`,
+    idOf: (r)=> String(r.key||""),
+    idFromForm: (row)=> row.key,
+    toFormRow: (r)=> ({
+      key:r.key||"", group:r.group||"", label:r.label||"", out:r.out||"",
+      source_id:r.source_id||"PEI_PLANNER_HEURISTICS", evidence_level:r.evidence_level||"",
+      applicability:r.applicability||"", conditions:r.conditions||"", targets:(r.targets||[]).join(";")
+    }),
+    upsertFromForm: (row, editingId)=>{
+      const key = String(row.key||"").trim();
+      if(!key) return null;
+      const rec = {
+        key,
+        group:String(row.group||"").trim(),
+        label:String(row.label||"").trim(),
+        out:String(row.out||"").trim(),
+        source_id:String(row.source_id||"PEI_PLANNER_HEURISTICS").trim() || "PEI_PLANNER_HEURISTICS",
+        evidence_level:String(row.evidence_level||"").trim(),
+        applicability:String(row.applicability||"").trim(),
+        conditions:String(row.conditions||"").trim(),
+        targets:_splitSemi(row.targets||"")
+      };
+      let arr = METHODS_CATALOG || [];
+      const idx = arr.findIndex(x => String(x.key) === String(editingId||key));
+      if(idx>=0) arr[idx]=rec; else arr.push(rec);
+      METHODS_CATALOG = arr;
+      rebuildMethodsMap();
+      try{ normalizeMethodsCatalog(); }catch(e){}
+      return key;
+    },
+    removeById: (id)=>{ METHODS_CATALOG = (METHODS_CATALOG||[]).filter(x=>String(x.key)!==String(id)); rebuildMethodsMap(); },
+    save: async ()=>{ await idbSet("methods", METHODS_CATALOG); await _dbUpdateMetaField("methods_version"); }
+  };
+}
+
+function _dbCtxSemantic(){
+  return {
+    columns:[{key:"key",label:"Concetto"},{key:"synonyms",label:"Sinonimi"},{key:"b_codes",label:"b"},{key:"d_codes",label:"d"},{key:"e_codes",label:"e"}],
+    fields:[
+      {key:"key",label:"Concetto",placeholder:"es. attenzione"},
+      {key:"synonyms",label:"Sinonimi (;)"},
+      {key:"b_codes",label:"b codes (;)"},
+      {key:"s_codes",label:"s codes (;)"},
+      {key:"d_codes",label:"d codes (;)"},
+      {key:"e_codes",label:"e codes (;)"}
+    ],
+    getRows: ()=> (ICF_SEMANTIC_CONCEPTS||[]).map(c=>({
+      key:c.key||"",
+      synonyms:(c.synonyms||[]).join(";"),
+      b_codes:(c.codes?.b||[]).join(";"),
+      s_codes:(c.codes?.s||[]).join(";"),
+      d_codes:(c.codes?.d||[]).join(";"),
+      e_codes:(c.codes?.e||[]).join(";")
+    })).sort((a,b)=>String(a.key).localeCompare(String(b.key))),
+    searchText: (r)=> `${r.key} ${r.synonyms} ${r.b_codes} ${r.d_codes} ${r.e_codes}`,
+    idOf: (r)=> String(r.key||""),
+    idFromForm: (row)=> row.key,
+    toFormRow: (r)=> ({...r}),
+    upsertFromForm: (row, editingId)=>{
+      const key = String(row.key||"").trim();
+      if(!key) return null;
+      const rec = {
+        key,
+        synonyms:_splitSemi(row.synonyms||""),
+        codes:{
+          b:_splitSemi(row.b_codes||""),
+          s:_splitSemi(row.s_codes||""),
+          d:_splitSemi(row.d_codes||""),
+          e:_splitSemi(row.e_codes||"")
+        }
+      };
+      let arr = ICF_SEMANTIC_CONCEPTS || [];
+      const idx = arr.findIndex(x => String(x.key) === String(editingId||key));
+      if(idx>=0) arr[idx]=rec; else arr.push(rec);
+      ICF_SEMANTIC_CONCEPTS = arr;
+      return key;
+    },
+    removeById: (id)=>{ ICF_SEMANTIC_CONCEPTS = (ICF_SEMANTIC_CONCEPTS||[]).filter(x=>String(x.key)!==String(id)); },
+    save: async ()=>{ await idbSet("icf_semantic", ICF_SEMANTIC_CONCEPTS); await _dbUpdateMetaField("semantic_version"); }
+  };
+}
+
+
+function initDbUpdatesUI(){
+  // UI: gestione cataloghi + import/export
+  const input = document.getElementById("fileDbImport");
+  const bICD = document.getElementById("btnDbManageICD");
+  const bICF = document.getElementById("btnDbManageICF");
+  const bM = document.getElementById("btnDbManageMethods");
+  const bS = document.getElementById("btnDbManageSemantic");
+  const bImp = document.getElementById("btnDbImportExcel");
+  const bExp = document.getElementById("btnDbExportExcel");
+  const bR = document.getElementById("btnDbReset");
+
+  if(bICD) bICD.addEventListener("click", () => openDbManager("icd"));
+  if(bICF) bICF.addEventListener("click", () => openDbManager("icf"));
+  if(bM) bM.addEventListener("click", () => openDbManager("methods"));
+  if(bS) bS.addEventListener("click", () => openDbManager("semantic"));
+
+  if(bImp) bImp.addEventListener("click", () => {
+    if(!input) return;
+    input.value = "";
+    input.click();
+  });
+
+  if(bExp) bExp.addEventListener("click", () => exportDatabaseToExcel());
+
+  if(bR) bR.addEventListener("click", async () => {
+    await resetCatalogsToDefault();
+    renderTable();
+    renderICF();
+    renderICD();
+    ensureDfpfState();
+    renderDiagICF();
+    renderOutput();
+  });
+
+  if(input){
+    input.addEventListener("change", async () => {
+      const file = input.files && input.files[0];
+      if(!file) return;
+      try{
+        const text = await file.text();
+        await importDatabaseFromSpreadsheetML(text, file.name || "");
+      }catch(err){
+        console.error(err);
+        _setDbStatus(`Errore import: ${err && err.message ? err.message : String(err)}`, true);
+        toast("Errore import: controlla che il file sia in formato Excel XML (2003) con i fogli corretti.");
+      }
+    });
+  }
+
+  initDbModal();
+}
 function toast(msg){
   let el = document.getElementById("toast");
   if(!el){
@@ -3521,6 +4768,7 @@ function exportJSON(){
   const out = (typeof structuredClone === "function") ? structuredClone(state) : JSON.parse(JSON.stringify(state));
   out.meta = out.meta || {};
   out.meta.document_preamble = "Documento di progettazione educativa a supporto della redazione del PEI. Non costituisce PEI formale.";
+  out.sources_used = buildSourcesUsed(out);
   const blob = new Blob([JSON.stringify(out, null, 2)], {type:"application/json"});
 const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -3853,6 +5101,7 @@ function buildPEIJsonBridge(s = state){
 
   return {
     document_preamble: "Documento di progettazione educativa a supporto della redazione del PEI. Non costituisce PEI formale.",
+    sources_used: buildSourcesUsed(s),
     _premessa_ai: premessa,
     pei_miur: {
       versione_modello: "DM182_2020",
@@ -3860,6 +5109,17 @@ function buildPEIJsonBridge(s = state){
       ordine_scuola: premessa.ordine_scuola || "",
       tipo_pei: ((s.meta && s.meta.tipo_pei) || (s.meta && s.meta.tipoPEI) || "ordinario")
     },
+    methods_selected: METHODS_CATALOG
+      .filter(m => s.plan && s.plan.methods && s.plan.methods[m.key])
+      .map(m => ({
+        key: m.key,
+        label: m.label,
+        out: m.out || "",
+        source_id: m.source_id || null,
+        evidence_level: m.evidence_level || null,
+        applicability: m.applicability || null,
+        conditions: m.conditions || null
+      })),
     sezioni_miur: (() => {
       const isI = (premessa.ordine_scuola === "secondaria_I_grado");
       const classeStr = String((s.meta && s.meta.classe) || "").toLowerCase();
@@ -4593,7 +5853,11 @@ assert("storageAvailable: boolean", typeof storageAvailable() === "boolean");
   }
 }
 
-function init(){
+async function init(){
+  // Carica eventuali cataloghi aggiornati da IndexedDB (se presenti)
+  try{ await loadCatalogsFromIndexedDB(); }catch(e){ console.warn(e); }
+  try{ normalizeMethodsCatalog(); }catch(e){}
+
   renderTable();
   renderDocs();
   renderNeeds();
@@ -4725,7 +5989,8 @@ document.getElementById("btnSave").addEventListener("click", saveLocal);
     if(f) importJSON(f);
     e.target.value = "";
   });
-
+  try{ initDbUpdatesUI(); }catch(e){}
+  try{ initSourcesModal(); }catch(e){}
   runTests();
 }
 
@@ -4966,7 +6231,7 @@ function initHelpMode(){
   });
 }
 
-init();
+init().catch(console.error);
 
 /* =========================
  *  Offline caching (Service Worker)

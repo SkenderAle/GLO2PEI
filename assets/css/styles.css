@@ -730,3 +730,131 @@
 #diagIcfList .dfpfRow .dfpfQualCell select{
   font-size: 12px;
 }
+
+/* =========================
+   Modal (Fonti documentali)
+   ========================= */
+.modalOverlay{
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,.55);
+  z-index: 9999;
+  padding: 18px;
+}
+.modalOverlay.open{ display:flex; }
+
+.modal{
+  width: min(900px, 96vw);
+  max-height: min(84vh, 900px);
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(12,16,23,.98);
+  box-shadow: 0 18px 60px rgba(0,0,0,.55);
+}
+
+.modalHeader{
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255,255,255,.10);
+}
+.modalHeader h3{
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.modalBody{
+  padding: 12px 14px 14px;
+  overflow: auto;
+  max-height: calc(min(84vh, 900px) - 54px);
+}
+
+.modalBody a{ color: rgba(212,241,255,.95); }
+.modalBody a:hover{ text-decoration: underline; }
+
+.modalGroupTitle{
+  font-weight: 800;
+  margin-top: 10px;
+  opacity: .95;
+}
+
+.modalList{
+  margin: 6px 0 0 18px;
+  padding: 0;
+}
+.modalList li{ margin: 6px 0; }
+
+.modalHint{
+  font-size: 12px;
+  opacity: .82;
+  margin-top: 2px;
+}
+
+/* ===== Database manager (modal) ===== */
+.dbTop{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  align-items:center;
+  margin-top: 10px;
+}
+.dbSearch{
+  flex: 1 1 220px;
+  min-width: 200px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.05);
+  color: rgba(231,237,245,.95);
+}
+.dbForm{ margin-top: 12px; }
+.dbFormGrid{
+  display:grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+@media (max-width: 720px){
+  .dbFormGrid{ grid-template-columns: 1fr; }
+}
+.dbField span{
+  display:block;
+  font-size: 12px;
+  opacity: .86;
+  margin: 0 0 6px;
+}
+.dbInput{
+  width:100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.05);
+  color: rgba(231,237,245,.95);
+}
+.dbInput:focus{ outline: none; border-color: rgba(212,241,255,.55); }
+.dbTableWrap{ margin-top: 12px; }
+.dbTable{
+  width:100%;
+  border-collapse: collapse;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.dbTable th, .dbTable td{
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  vertical-align: top;
+  font-size: 13px;
+}
+.dbTable th{
+  text-align:left;
+  font-weight: 800;
+  background: rgba(255,255,255,.06);
+}
+.dbTable tr:hover{ background: rgba(255,255,255,.04); cursor:pointer; }
+.dbTable tr.active{ background: rgba(212,241,255,.10); }
